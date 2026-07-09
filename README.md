@@ -8,7 +8,7 @@
 |------|-----|
 | 名称 | 禁漫天堂(重构) |
 | 标识 | `jmrecode` |
-| 版本 | `1.4.0` |
+| 版本 | `1.5.0` |
 | 最低 App 版本 | `1.5.0` |
 | 更新地址 | `https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js` |
 
