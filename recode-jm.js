@@ -830,7 +830,7 @@ class JM extends ComicSource {
                 num = 0;
             } else if (epId < 268850) {
                 num = 10;
-            } else if (epId > 421926) {
+            } else if (epId > 421925) {
                 let str = epId.toString() + pictureName;
                 let bytes = Convert.encodeUtf8(str);
                 let hash = Convert.md5(bytes);
