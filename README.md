@@ -1,6 +1,6 @@
-# 禁漫天堂(重构) — Venera 漫画源插件
+# 禁漫天堂(重构) — [Venera](https://github.com/venera-app/venera) 漫画源插件
 
-基于 Venera App 的禁漫天堂 (JMComic) 漫画源，支持浏览、搜索、签到、图片分流测速等功能。
+基于 [Venera](https://github.com/venera-app/venera) App 的禁漫天堂 (JMComic) 漫画源，支持浏览、搜索、签到、图片分流测速等功能。
 
 > ⚠️ 由于架构限制已移除网络收藏功能
 
