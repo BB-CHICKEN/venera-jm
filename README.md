@@ -23,7 +23,7 @@
 
 | 序号 | 链接 | 说明 |
 |------|------|------|
-| 1 | `https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js` | 需要梯子 |
+| 1 | `https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js` | 可能需要魔法 |
 | 2 | `https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js` | 镜像源 |
 
 ## 功能特性
