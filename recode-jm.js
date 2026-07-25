@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.7.0"
+    version = "1.8.0"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
@@ -212,14 +212,13 @@ class JM extends ComicSource {
         let testPath = "/promote?page=1"
         let url = `https://${domain}${testPath}`
         let time = Math.floor(Date.now() / 1000)
+        let startTime = Date.now()
 
         try {
-            let fetchPromise = fetch(url, { headers: this.getApiHeaders(time) })
-            let timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('timeout')), 5000)
-            )
-            let startTime = Date.now()
-            let res = await Promise.race([fetchPromise, timeoutPromise])
+            let res = await Promise.race([
+                Network.get(url, this.getApiHeaders(time)),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+            ])
             if (res.status !== 200) {
                 return { success: false, latency: 0 }
             }
@@ -246,16 +245,22 @@ class JM extends ComicSource {
 
     async optimizeNodes() {
         UI.showMessage("正在测试节点延迟...")
+        const domains = JM.apiDomains
 
-        let results = []
-        for (let i = 0; i < JM.apiDomains.length; i++) {
-            let domain = JM.apiDomains[i]
-            let result = await this.testApiNode(domain)
+        // 同步创建所有 Promise，确保请求同时发出
+        const promises = []
+        for (let i = 0; i < domains.length; i++) {
+            promises.push(this.testApiNode(domains[i]))
+        }
+        const nodeResults = await Promise.all(promises)
+
+        const results = []
+        for (let i = 0; i < domains.length; i++) {
             results.push({
                 index: i + 1,
-                domain: domain,
-                latency: result.latency,
-                success: result.success
+                domain: domains[i],
+                latency: nodeResults[i].latency,
+                success: nodeResults[i].success
             })
         }
 
@@ -289,80 +294,99 @@ class JM extends ComicSource {
     }
 
     // ---------- 图片分流测速 ----------
-    // ---------- 图片分流测速 ----------
     async testImageSpeed() {
-        UI.showMessage("正在测试图片分流速度...")
+        const TOTAL_LINES = 4
+        const TEST_IMG_BASE = "/media/photos/209654/"
+        const TEST_IMG_NAMES = ["00001.webp", "00002.webp", "00003.webp"]
+        const IMG_TIMEOUT_MS = 5000
 
-        let results = []
-        let testedUrls = new Set()
+        UI.showMessage("正在测试图片分流速度 1/4...")
 
-        // 并行启动 4 个节点测速
-        let tasks = []
-        for (let i = 1; i <= 4; i++) {
-            tasks.push((async (index) => {
-                // 获取该线路的图片 CDN URL
-                let cdnUrl = null
-                try {
-                    let res = await this.get(`${this.baseUrl}/setting?app_img_shunt=${index}&express=`)
-                    let setting = JSON.parse(res)
-                    cdnUrl = setting["img_host"]
-                } catch (e) {
-                    return { index: index, url: "获取失败", speed: 0, size: 0, latency: 0, success: false }
+        // ===== 第一步：并行请求所有分流线路的 CDN 域名 =====
+        const cdnFetchTasks = []
+        for (let i = 1; i <= TOTAL_LINES; i++) {
+            cdnFetchTasks.push(
+                this._fetchCdnUrl(i).catch(() => ({ index: i, url: null }))
+            )
+        }
+        const cdnResults = await Promise.all(cdnFetchTasks)
+
+        UI.showMessage("正在测试图片分流速度 2/4...")
+
+        // ===== 第二步：CDN URL 去重，构建唯一域名列表 =====
+        const urlToIndices = new Map()   // url -> [firstIndex, ...otherIndices]
+        const uniqueUrls = []            // 按首次出现顺序排列
+        const lineResults = new Array(TOTAL_LINES + 1)  // 1-based index
+
+        for (const r of cdnResults) {
+            if (!r.url) {
+                lineResults[r.index] = {
+                    index: r.index, url: "获取失败", speed: 0, size: 0, success: false
                 }
-
-                if (!cdnUrl) {
-                    return { index: index, url: "获取失败", speed: 0, size: 0, latency: 0, success: false }
+                continue
+            }
+            if (urlToIndices.has(r.url)) {
+                // 重复 URL：标记为 -1（与上相同）
+                urlToIndices.get(r.url).push(r.index)
+                lineResults[r.index] = {
+                    index: r.index, url: r.url, speed: -1, size: 0, success: false
                 }
-
-                let testImgBase = "/media/photos/209654/"
-                let startTime = Date.now()
-                let totalSize = 0
-
-                try {
-                    // 下载 00001.webp ~ 00003.webp 共 3 张图
-                    for (let j = 1; j <= 3; j++) {
-                        let imgName = j.toString().padStart(5, '0') + '.webp'
-                        let imgUrl = `${cdnUrl}${testImgBase}${imgName}`
-                        let fetchPromise = fetch(imgUrl, { headers: this.getImgHeaders() })
-                        let timeoutPromise = new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error('timeout')), 10000)
-                        )
-                        let res = await Promise.race([fetchPromise, timeoutPromise])
-                        if (res.status !== 200) break
-                        let data = await res.arrayBuffer()
-                        totalSize += data.byteLength
-                    }
-
-                    let elapsed = (Date.now() - startTime) / 1000
-                    let speedMBps = totalSize > 0 ? (totalSize / 1024 / 1024) / elapsed : 0
-
-                    return {
-                        index: index,
-                        url: cdnUrl,
-                        speed: speedMBps,
-                        size: totalSize,
-                        latency: elapsed,
-                        success: totalSize > 0
-                    }
-                } catch (e) {
-                    return { index: index, url: cdnUrl, speed: 0, size: 0, latency: 0, success: false }
-                }
-            })(i))
+            } else {
+                urlToIndices.set(r.url, [r.index])
+                uniqueUrls.push(r.url)
+            }
         }
 
-        results = await Promise.all(tasks)
+        UI.showMessage("正在测试图片分流速度 3/4...")
 
-        // 排序（跳过重复标记的）
+        // ===== 第三步：并行对所有唯一 CDN 域名测速 =====
+        const testTasks = uniqueUrls.map(url =>
+            this._testSingleDomain(url, TEST_IMG_BASE, TEST_IMG_NAMES, IMG_TIMEOUT_MS)
+        )
+        const testResults = await Promise.all(testTasks)
+
+        // 将测速结果映射回每个唯一 URL
+        const urlToResult = new Map()
+        for (let i = 0; i < uniqueUrls.length; i++) {
+            urlToResult.set(uniqueUrls[i], testResults[i])
+        }
+
+        // 填充首次出现的线路结果
+        for (const [url, indices] of urlToIndices) {
+            const result = urlToResult.get(url)
+            lineResults[indices[0]] = {
+                index: indices[0],
+                url: url,
+                speed: result.speed,
+                size: result.size,
+                success: result.success
+            }
+        }
+
+        UI.showMessage("正在测试图片分流速度 4/4...")
+
+        // ===== 第四步：收集结果并排序 =====
+        const results = []
+        for (let i = 1; i <= TOTAL_LINES; i++) {
+            results.push(lineResults[i])
+        }
+
         results.sort((a, b) => {
+            // -1 标记的（重复线路）排最后
+            if (a.speed === -1 && b.speed === -1) return 0
+            if (a.speed === -1) return 1
+            if (b.speed === -1) return -1
+            // 成功的按速度降序，失败的排后面
             if (!a.success && !b.success) return 0
             if (!a.success) return 1
             if (!b.success) return -1
             return b.speed - a.speed
         })
 
+        // ===== 第五步：显示结果对话框 =====
         let message = "图片分流测速结果:\n\n"
         for (let i = 0; i < results.length; i++) {
-            let r = results[i]
+            const r = results[i]
             let status
             if (r.speed === -1) {
                 status = "与上相同"
@@ -371,7 +395,7 @@ class JM extends ComicSource {
             } else {
                 status = "连接失败"
             }
-            let mark = i === 0 && r.success ? " 👈 最快" : ""
+            const mark = (i === 0 && r.success && r.speed !== -1) ? " 👈 最快" : ""
             message += `线路${r.index}: ${r.url}\n速度: ${status}${mark}\n\n`
         }
 
@@ -387,6 +411,80 @@ class JM extends ComicSource {
                 { text: "重新测速", callback: () => setTimeout(() => this.testImageSpeed(), 100) }
             ]
         )
+    }
+
+    /**
+     * 获取指定线路的图片 CDN 域名
+     * @param {number} index - 线路编号 (1-4)
+     * @returns {Promise<{index: number, url: string|null}>}
+     */
+    async _fetchCdnUrl(index) {
+        try {
+            const res = await this.get(`${this.baseUrl}/setting?app_img_shunt=${index}&express=`)
+            const setting = JSON.parse(res)
+            const url = setting["img_host"] || null
+            return { index, url }
+        } catch (e) {
+            return { index, url: null }
+        }
+    }
+
+    /**
+     * 对单个 CDN 域名进行测速：并行下载多张小图，计算总大小与耗时
+     * @param {string} cdnUrl - CDN 域名（如 "https://cdn-xxx.net"）
+     * @param {string} imgBase - 图片路径前缀
+     * @param {string[]} imgNames - 待下载的图片文件名列表
+     * @param {number} timeoutMs - 单张图片超时毫秒数
+     * @returns {Promise<{speed: number, size: number, success: boolean}>}
+     */
+    async _testSingleDomain(cdnUrl, imgBase, imgNames, timeoutMs) {
+        const startTime = Date.now()
+        let totalSize = 0
+        let anySuccess = false
+
+        // 并行下载所有图片
+        const downloads = imgNames.map(imgName =>
+            this._downloadImage(`${cdnUrl}${imgBase}${imgName}`, timeoutMs)
+        )
+
+        const results = await Promise.all(downloads)
+
+        for (const data of results) {
+            if (data !== null) {
+                totalSize += data.byteLength
+                anySuccess = true
+            }
+        }
+
+        if (!anySuccess || totalSize === 0) {
+            return { speed: 0, size: 0, success: false }
+        }
+
+        const elapsed = (Date.now() - startTime) / 1000
+        const speedMBps = (totalSize / 1024 / 1024) / elapsed
+
+        return { speed: speedMBps, size: totalSize, success: true }
+    }
+
+    /**
+     * 下载单张图片，带超时控制
+     * @param {string} url - 图片完整 URL
+     * @param {number} timeoutMs - 超时毫秒数
+     * @returns {Promise<ArrayBuffer|null>} - 成功返回 ArrayBuffer，失败返回 null
+     */
+    async _downloadImage(url, timeoutMs) {
+        try {
+            const fetchPromise = fetch(url, { headers: this.getImgHeaders() })
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('timeout')), timeoutMs)
+            )
+            const res = await Promise.race([fetchPromise, timeoutPromise])
+            if (res.status !== 200) return null
+            const data = await res.arrayBuffer()
+            return data
+        } catch (e) {
+            return null
+        }
     }
     // ---------- 数据转换 ----------
     parseComic(comic) {
@@ -1038,24 +1136,34 @@ class JM extends ComicSource {
             return "ok"
         },
         loadComments: async (comicId, subId, page, replyTo) => {
-            let res = await this.get(`${this.baseUrl}/forum?mode=manhua&aid=${comicId}&page=${page}`)
+            let url = `${this.baseUrl}/forum?mode=manhua&aid=${comicId}&page=${page}`
+            if (replyTo) {
+                url += `&comment_id=${replyTo}`
+            }
+            let res = await this.get(url)
             let json = JSON.parse(res)
             const pageSize = 6
             return {
                 comments: json.list.map((e) => new Comment({
+                    id: e.id?.toString(),
                     avatar: this.getAvatarUrl(e.photo),
                     userName: e.username,
                     time: e.addtime,
                     content: e.content.substring(e.content.indexOf('>') + 1, e.content.lastIndexOf('<')),
+                    replyTo: replyTo || undefined,
                 })),
                 maxPage: Math.floor(json.total / pageSize) + 1
             }
         },
         sendComment: async (comicId, subId, content, replyTo) => {
-            let res = await this.post(`${this.baseUrl}/comment`, `aid=${comicId}&comment=${encodeURIComponent(content)}&status=undefined`)
+            let params = `video_id=${comicId}&comment=${encodeURIComponent(content)}&status=true`
+            if (replyTo) {
+                params += `&comment_id=${replyTo}&is_reply=1&forum_subject=1`
+            }
+            let res = await this.post(`${this.baseUrl}/comment`, params)
             let json = JSON.parse(res)
             if (json.status === "fail") {
-                throw json.msg ?? '发送评论失败'
+                throw json.msg ?? 'Failed to send comment'
             }
             return "ok"
         },
