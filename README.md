@@ -147,4 +147,3 @@
 **Bug 修复**
 - 修复评论发送失败：`status` 参数从 `undefined` 修正为 `'true'`
 - 修复评论接口参数：`/album_comment` 端点适配 `video_id` 参数名
-- 修复回复评论缺少 `comment_id`、`is_reply`、`forum_subject` 参数
