@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Venera App 主仓库
+    url: https://github.com/venera-app/venera
+    about: 如果是 App 本身的问题，请前往 Venera 主仓库提交 Issue
+  - name: 使用说明
+    url: https://github.com/BB-CHICKEN/venera-jm#readme
+    about: 请先阅读 README 中的使用说明和订阅链接
