@@ -1,0 +1,37 @@
+name: 其他 / 讨论
+description: 不属于 Bug 和功能请求的其他问题或讨论
+title: "[Other] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        如果你遇到的是 **Bug** 或想提 **功能建议**，请返回选择对应的模板，这样能更快得到处理。
+        此模板用于其他类型的问题，如使用疑问、讨论等。
+
+  - type: textarea
+    id: content
+    attributes:
+      label: 内容描述
+      description: 请详细描述你的问题或讨论内容
+      placeholder: 我想问的是...
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: 插件版本（如有）
+      placeholder: 如 1.8.2
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已确认此问题不属于 Bug 或功能请求
+          required: true
+        - label: 我已搜索过已有 Issue，确认无重复
+          required: true
