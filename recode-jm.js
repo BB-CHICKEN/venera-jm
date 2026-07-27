@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.1"
+    version = "1.8.2"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
@@ -117,6 +117,68 @@ class JM extends ComicSource {
         if (this.loadSetting('refreshDomainsOnStart')) await this.refreshApiDomains(false);
         this.refreshImgUrl(false);
         await this._autoLogin();
+        if (this.loadSetting('checkUpdateOnStart')) {
+            this.checkVersion();
+        }
+    }
+
+    // ---------- 版本检查 ----------
+    compareVersions(v1, v2) {
+        const parts1 = v1.split('.').map(Number);
+        const parts2 = v2.split('.').map(Number);
+        const maxLen = Math.max(parts1.length, parts2.length);
+        for (let i = 0; i < maxLen; i++) {
+            const a = parts1[i] || 0;
+            const b = parts2[i] || 0;
+            if (a > b) return 1;
+            if (a < b) return -1;
+        }
+        return 0;
+    }
+
+    async checkVersion() {
+        try {
+            const urls = [
+                "https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js",
+                "https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js"
+            ];
+            let res = null;
+            for (const url of urls) {
+                try {
+                    res = await Promise.race([
+                        fetch(url, { headers: this.baseHeaders }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+                    ]);
+                    if (res && res.status === 200) break;
+                } catch (e) {
+                    continue;
+                }
+            }
+            if (!res || res.status !== 200) {
+                console.warn("版本检查失败：无法获取远程版本信息");
+                return;
+            }
+            const text = await res.text();
+            const match = text.match(/version\s*=\s*["']([^"']+)["']/);
+            if (!match) {
+                console.warn("版本检查失败：无法解析远程版本号");
+                return;
+            }
+            const remoteVersion = match[1];
+            if (this.compareVersions(remoteVersion, this.version) > 0) {
+                UI.showDialog(
+                    "JMComic发现新版本",
+                    `当前版本：${this.version}\n最新版本：${remoteVersion}\n\n请前往漫画源列表更新最新版本\n不是蓝色按钮的更新，是漫画源版本号的右方时钟图标`,
+                    [
+                        { text: "关闭", callback: () => {} }
+                    ]
+                );
+            } else {
+                console.log(`版本检查完成：当前 ${this.version} 已是最新版本`);
+            }
+        } catch (e) {
+            console.warn("版本检查失败", e);
+        }
     }
 
     // ---------- 自动登录（从设置读取凭证） ----------
@@ -1190,6 +1252,11 @@ class JM extends ComicSource {
             type: "switch",
             default: true,
         },
+        checkUpdateOnStart: {
+            title: "启动时检查更新",
+            type: "switch",
+            default: true,
+        },
         apiDomain: {
             title: "Api Domain",
             type: "select",
@@ -1227,7 +1294,7 @@ class JM extends ComicSource {
         dailyCheckInTask: {
             title: "每日自动签到",
             type: "switch",
-            default: false
+            default: true
         },
         dailyCheckIn: {
             title: "手动签到",
@@ -1251,8 +1318,6 @@ class JM extends ComicSource {
             type: "input",   // 如果框架不支持 password，可改为 input，但会明文显示
             default: ""
         },
-
-
     }
 
     // ---------- 翻译 ----------
@@ -1280,6 +1345,8 @@ class JM extends ComicSource {
             'autoReLogin': '自动重登（保持登录）',
             'jm_account': 'JM 账号',
             'jm_pwd': 'JM 密码',
+            'checkUpdateOnStart': '启动时检查更新',
+            '启动时检查更新': '启动时检查更新',
         },
         'zh_TW': {
             'Refresh Domain List': '刷新域名列表',
@@ -1304,6 +1371,8 @@ class JM extends ComicSource {
             'autoReLogin': '自動重登（保持登錄）',
             'jm_account': 'JM 帳號',
             'jm_pwd': 'JM 密碼',
+            'checkUpdateOnStart': '啟動時檢查更新',
+            '启动时检查更新': '啟動時檢查更新',
         },
     }
 }
