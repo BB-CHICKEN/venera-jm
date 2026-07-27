@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.0"
+    version = "1.8.1"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
@@ -326,10 +326,11 @@ class JM extends ComicSource {
                 continue
             }
             if (urlToIndices.has(r.url)) {
-                // 重复 URL：标记为 -1（与上相同）
+                // 重复 URL：记录与哪个线路相同
+                const firstIndex = urlToIndices.get(r.url)[0]
                 urlToIndices.get(r.url).push(r.index)
                 lineResults[r.index] = {
-                    index: r.index, url: r.url, speed: -1, size: 0, success: false
+                    index: r.index, url: r.url, speed: -1, size: 0, success: false, sameAs: firstIndex
                 }
             } else {
                 urlToIndices.set(r.url, [r.index])
@@ -389,7 +390,7 @@ class JM extends ComicSource {
             const r = results[i]
             let status
             if (r.speed === -1) {
-                status = "与上相同"
+                status = `与线路${r.sameAs}相同`
             } else if (r.success) {
                 status = `${this.formatSpeed(r.speed)}  (${this.formatSize(r.size)})`
             } else {
