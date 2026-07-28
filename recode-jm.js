@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.2"
+    version = "1.8.3"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
@@ -12,15 +12,17 @@ class JM extends ComicSource {
     _loggedIn = false
     _reLoginDialogShown = false
     _renewing = false
+    _shuntMapping = null
 
     static fallbackServers = [
-        "www.cdntwice.org",
-        "www.cdnsha.org",
-        "www.cdnaspa.cc",
-        "www.cdnntr.cc",
+        "www.cdnhjk.net",
+        "www.cdngwc.cc",
+        "www.cdngwc.net",
+        "www.cdngwc.club",
+        "www.cdnutc.me",
     ];
     static apiDomains = JM.fallbackServers;
-    static imageUrl = "https://cdn-msp.jmapinodeudzn.net"
+    static imageUrl = "https://cdn-msp.jmapiproxy1.cc"
 
     static ua = "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36"
 
@@ -139,8 +141,8 @@ class JM extends ComicSource {
     async checkVersion() {
         try {
             const urls = [
-                "https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js",
-                "https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js"
+                "https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/version.json",
+                "https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/version.json"
             ];
             let res = null;
             for (const url of urls) {
@@ -158,13 +160,12 @@ class JM extends ComicSource {
                 console.warn("版本检查失败：无法获取远程版本信息");
                 return;
             }
-            const text = await res.text();
-            const match = text.match(/version\s*=\s*["']([^"']+)["']/);
-            if (!match) {
+            const data = await res.json();
+            const remoteVersion = data.version;
+            if (!remoteVersion) {
                 console.warn("版本检查失败：无法解析远程版本号");
                 return;
             }
-            const remoteVersion = match[1];
             if (this.compareVersions(remoteVersion, this.version) > 0) {
                 UI.showDialog(
                     "JMComic发现新版本",
@@ -220,7 +221,7 @@ class JM extends ComicSource {
             if (json["Server"]) {
                 title = "更新成功"
                 message = "\n"
-                servers = json["Server"].slice(0, 4)
+                servers = json["Server"]
             }
         }
         if (servers.length === 0) {
@@ -245,6 +246,8 @@ class JM extends ComicSource {
                         text: "应用",
                         callback: () => {
                             this.overwriteApiDomains(domains)
+                            this._shuntMapping = null
+                            this._shuntResults = null
                             this.refreshImgUrl(true)
                         }
                     }
@@ -256,17 +259,53 @@ class JM extends ComicSource {
     }
 
     async refreshImgUrl(showMessage) {
-        let index = this.loadSetting('imageStream')
+        let option = parseInt(this.loadSetting('imageStream')) || 1
+        let mapping = await this._buildShuntMapping()
+        let actualIndex = mapping[Math.min(option - 1, mapping.length - 1)]
+
         let res = await this.get(
-            `${this.baseUrl}/setting?app_img_shunt=${index}&express=`
+            `${this.baseUrl}/setting?app_img_shunt=${actualIndex}&express=`
         )
         let setting = JSON.parse(res)
         if (setting["img_host"]) {
             if (showMessage) {
-                UI.showMessage(`图片分流 ${index}:\n${setting["img_host"]}`)
+                UI.showMessage(`图片分流 ${option} → 实际线路${actualIndex}:\n${setting["img_host"]}`)
             }
             this.overwriteImgUrl(setting["img_host"])
         }
+    }
+
+    /**
+     * 构建去重后的分流映射表：选项 N → 第 N 个不重复的实际分流编号
+     * 同时缓存所有分流的原始结果供 testImageSpeed 复用
+     * @returns {Promise<number[]>} 如 [1, 2, 3, 4, 6, 9]
+     */
+    async _buildShuntMapping(forceRefresh = false) {
+        if (!forceRefresh && this._shuntMapping && this._shuntMapping.length > 0) {
+            return this._shuntMapping
+        }
+        const MAX_SHUNTS = 10
+        const seenUrls = new Map()
+        const uniqueIndices = []
+
+        const tasks = []
+        for (let i = 1; i <= MAX_SHUNTS; i++) {
+            tasks.push(
+                this._fetchCdnUrl(i).catch(() => ({ index: i, url: null }))
+            )
+        }
+        const results = await Promise.all(tasks)
+
+        for (const r of results) {
+            if (r.url && !seenUrls.has(r.url)) {
+                seenUrls.set(r.url, r.index)
+                uniqueIndices.push(r.index)
+            }
+        }
+
+        this._shuntMapping = uniqueIndices
+        this._shuntResults = results
+        return uniqueIndices
     }
 
     // ---------- 节点 Ping ----------
@@ -357,112 +396,64 @@ class JM extends ComicSource {
 
     // ---------- 图片分流测速 ----------
     async testImageSpeed() {
-        const TOTAL_LINES = 4
+        const MAX_OPTIONS = 5
         const TEST_IMG_BASE = "/media/photos/209654/"
         const TEST_IMG_NAMES = ["00001.webp", "00002.webp", "00003.webp"]
         const IMG_TIMEOUT_MS = 5000
 
-        UI.showMessage("正在测试图片分流速度 1/4...")
+        UI.showMessage("正在获取分流列表...")
 
-        // ===== 第一步：并行请求所有分流线路的 CDN 域名 =====
-        const cdnFetchTasks = []
-        for (let i = 1; i <= TOTAL_LINES; i++) {
-            cdnFetchTasks.push(
-                this._fetchCdnUrl(i).catch(() => ({ index: i, url: null }))
-            )
-        }
-        const cdnResults = await Promise.all(cdnFetchTasks)
+        // ===== 第一步：获取去重映射（选项 N → 实际线路编号） =====
+        const mapping = await this._buildShuntMapping(true)
+        const optionIndices = mapping.slice(0, MAX_OPTIONS)
 
-        UI.showMessage("正在测试图片分流速度 2/4...")
-
-        // ===== 第二步：CDN URL 去重，构建唯一域名列表 =====
-        const urlToIndices = new Map()   // url -> [firstIndex, ...otherIndices]
-        const uniqueUrls = []            // 按首次出现顺序排列
-        const lineResults = new Array(TOTAL_LINES + 1)  // 1-based index
-
-        for (const r of cdnResults) {
-            if (!r.url) {
-                lineResults[r.index] = {
-                    index: r.index, url: "获取失败", speed: 0, size: 0, success: false
-                }
-                continue
-            }
-            if (urlToIndices.has(r.url)) {
-                // 重复 URL：记录与哪个线路相同
-                const firstIndex = urlToIndices.get(r.url)[0]
-                urlToIndices.get(r.url).push(r.index)
-                lineResults[r.index] = {
-                    index: r.index, url: r.url, speed: -1, size: 0, success: false, sameAs: firstIndex
-                }
-            } else {
-                urlToIndices.set(r.url, [r.index])
-                uniqueUrls.push(r.url)
-            }
-        }
-
-        UI.showMessage("正在测试图片分流速度 3/4...")
-
-        // ===== 第三步：并行对所有唯一 CDN 域名测速 =====
-        const testTasks = uniqueUrls.map(url =>
-            this._testSingleDomain(url, TEST_IMG_BASE, TEST_IMG_NAMES, IMG_TIMEOUT_MS)
+        // ===== 第二步：并行获取每个选项对应的 CDN 域名 =====
+        const fetchTasks = optionIndices.map(idx =>
+            this._fetchCdnUrl(idx).catch(() => ({ index: idx, url: null }))
         )
+        const cdnResults = await Promise.all(fetchTasks)
+
+        UI.showMessage("正在测速...")
+
+        // ===== 第三步：并行测速 =====
+        const testTasks = cdnResults.map(r => {
+            if (!r.url) return Promise.resolve({ speed: 0, size: 0, success: false })
+            return this._testSingleDomain(r.url, TEST_IMG_BASE, TEST_IMG_NAMES, IMG_TIMEOUT_MS)
+        })
         const testResults = await Promise.all(testTasks)
 
-        // 将测速结果映射回每个唯一 URL
-        const urlToResult = new Map()
-        for (let i = 0; i < uniqueUrls.length; i++) {
-            urlToResult.set(uniqueUrls[i], testResults[i])
-        }
+        // ===== 第四步：构建结果并排序 =====
+        const sorted = optionIndices.map((shuntIdx, i) => ({
+            option: i + 1,
+            shunt: shuntIdx,
+            url: cdnResults[i].url || "获取失败",
+            speed: cdnResults[i].url ? testResults[i].speed : 0,
+            size: cdnResults[i].url ? testResults[i].size : 0,
+            success: cdnResults[i].url ? testResults[i].success : false
+        }))
 
-        // 填充首次出现的线路结果
-        for (const [url, indices] of urlToIndices) {
-            const result = urlToResult.get(url)
-            lineResults[indices[0]] = {
-                index: indices[0],
-                url: url,
-                speed: result.speed,
-                size: result.size,
-                success: result.success
-            }
-        }
-
-        UI.showMessage("正在测试图片分流速度 4/4...")
-
-        // ===== 第四步：收集结果并排序 =====
-        const results = []
-        for (let i = 1; i <= TOTAL_LINES; i++) {
-            results.push(lineResults[i])
-        }
-
-        results.sort((a, b) => {
-            // -1 标记的（重复线路）排最后
-            if (a.speed === -1 && b.speed === -1) return 0
-            if (a.speed === -1) return 1
-            if (b.speed === -1) return -1
-            // 成功的按速度降序，失败的排后面
+        // 按速度降序
+        sorted.sort((a, b) => {
             if (!a.success && !b.success) return 0
             if (!a.success) return 1
             if (!b.success) return -1
             return b.speed - a.speed
         })
 
-        // ===== 第五步：显示结果对话框 =====
         let message = "图片分流测速结果:\n\n"
-        for (let i = 0; i < results.length; i++) {
-            const r = results[i]
+        for (let i = 0; i < sorted.length; i++) {
+            const r = sorted[i]
             let status
-            if (r.speed === -1) {
-                status = `与线路${r.sameAs}相同`
-            } else if (r.success) {
+            if (r.success) {
                 status = `${this.formatSpeed(r.speed)}  (${this.formatSize(r.size)})`
             } else {
                 status = "连接失败"
             }
-            const mark = (i === 0 && r.success && r.speed !== -1) ? " 👈 最快" : ""
-            message += `线路${r.index}: ${r.url}\n速度: ${status}${mark}\n\n`
+            const mark = (i === 0 && r.success) ? " 👈 最快" : ""
+            message += `选项${r.option} → 实际线路${r.shunt}\n${r.url}\n速度: ${status}${mark}\n\n`
         }
 
-        if (results.every(r => !r.success || r.speed === -1)) {
+        if (sorted.every(r => !r.success)) {
             message += "所有节点均连接失败，请检查网络后重试"
         }
 
@@ -478,7 +469,7 @@ class JM extends ComicSource {
 
     /**
      * 获取指定线路的图片 CDN 域名
-     * @param {number} index - 线路编号 (1-4)
+     * @param {number} index - 线路编号 (1-10)
      * @returns {Promise<{index: number, url: string|null}>}
      */
     async _fetchCdnUrl(index) {
@@ -1265,6 +1256,7 @@ class JM extends ComicSource {
                 { value: '2' },
                 { value: '3' },
                 { value: '4' },
+                { value: '5' },
             ],
             default: "1",
         },
@@ -1276,6 +1268,7 @@ class JM extends ComicSource {
                 { value: '2' },
                 { value: '3' },
                 { value: '4' },
+                { value: '5' },
             ],
             default: "1",
         },

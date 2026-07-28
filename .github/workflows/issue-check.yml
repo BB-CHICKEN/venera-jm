@@ -1,0 +1,124 @@
+name: Issue 校验
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            const title = issue.title || '';
+            const labels = issue.labels.map(l => l.name);
+
+            const BOT_COMMENT = '🤖 **自动校验结果**';
+            const REPLY_TIME = '7 天内';
+
+            async function closeWithComment(reason) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `${BOT_COMMENT}\n\n${reason}\n\n如有疑问请重新提交符合规范的 Issue。`
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed'
+              });
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['invalid']
+              });
+            }
+
+            async function askForInfo(reason) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `${BOT_COMMENT}\n\n${reason}\n\n请在 **${REPLY_TIME}** 内补充信息，逾期将自动关闭此 Issue。`
+              });
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['needs-info']
+              });
+            }
+
+            //-------------- 1. 空内容检查 --------------
+            const strippedBody = body.replace(/<!--[\s\S]*?-->/g, '').trim();
+            if (strippedBody.length < 30) {
+              await closeWithComment('Issue 内容过短，请使用模板完整填写信息后重新提交。');
+              return;
+            }
+
+            //-------------- 2. 判断是否为 Bug 报告 --------------
+            const isBug = labels.includes('bug') || title.startsWith('[Bug]');
+
+            if (isBug) {
+              // 检查必填字段是否留空
+              const missingFields = [];
+
+              // 插件版本
+              const versionMatch = body.match(/### 插件版本\s*\n\s*(_No response_|_无响应_|$)/);
+              if (versionMatch) missingFields.push('插件版本');
+
+              // App 版本
+              const appMatch = body.match(/### App 版本\s*\n\s*(_No response_|_无响应_|$)/);
+              if (appMatch) missingFields.push('App 版本');
+
+              // 问题描述
+              const descMatch = body.match(/### 问题描述\s*\n\s*(_No response_|_无响应_|$)/);
+              if (descMatch) missingFields.push('问题描述');
+
+              // 复现步骤
+              const stepsMatch = body.match(/### 复现步骤\s*\n\s*(_No response_|_无响应_|$)/);
+              if (stepsMatch) missingFields.push('复现步骤');
+
+              if (missingFields.length > 0) {
+                await askForInfo(`Bug 报告缺少以下必填信息：\n\n${missingFields.map(f => `- ${f}`).join('\n')}\n\n请编辑 Issue 补充上述内容。`);
+                return;
+              }
+
+              // 错误日志检查 - 建议性
+              const logsMatch = body.match(/### 错误日志[^#]*\n\s*(_No response_|_无响应_|$)/);
+              if (logsMatch) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `${BOT_COMMENT}\n\n💡 建议提供错误日志或截图，有助于更快定位问题。`
+                });
+              }
+            }
+
+            //-------------- 3. 判断是否为功能请求 --------------
+            const isFeature = labels.includes('enhancement') || title.startsWith('[Feature]');
+
+            if (isFeature) {
+              const problemMatch = body.match(/### 这个功能解决什么问题？\s*\n\s*(_No response_|_无响应_|$)/);
+              const solutionMatch = body.match(/### 你期望的解决方案\s*\n\s*(_No response_|_无响应_|$)/);
+
+              if (problemMatch || solutionMatch) {
+                const missing = [];
+                if (problemMatch) missing.push('这个功能解决什么问题？');
+                if (solutionMatch) missing.push('你期望的解决方案');
+                await askForInfo(`功能请求缺少以下必填信息：\n\n${missing.map(f => `- ${f}`).join('\n')}\n\n请编辑 Issue 补充上述内容。`);
+                return;
+              }
+            }
+
+            console.log(`Issue #${issue.number} 校验通过`);

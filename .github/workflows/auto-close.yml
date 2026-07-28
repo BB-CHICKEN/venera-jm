@@ -1,0 +1,159 @@
+name: 自动关闭
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 每天 UTC 0:00 运行
+  workflow_dispatch:        # 允许手动触发
+
+permissions:
+  issues: write
+
+jobs:
+  close-needs-info:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const DAYS_NEEDS_INFO = 7;
+            const DAYS_STALE = 30;
+            const BOT_COMMENT = '🤖 **自动关闭**';
+
+            const now = new Date();
+
+            //-------------- 1. 关闭超时未补充信息的 needs-info 标签 Issue --------------
+            const { data: needsInfoIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'needs-info',
+              state: 'open',
+              per_page: 50
+            });
+
+            for (const issue of needsInfoIssues) {
+              if (issue.pull_request) continue; // 跳过 PR
+
+              const botComments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100
+              });
+
+              // 找到最新的 bot 请求信息评论
+              let lastBotAsk = null;
+              for (const comment of botComments.data.reverse()) {
+                if (comment.body.includes(BOT_COMMENT) || comment.body.includes('自动校验结果')) {
+                  lastBotAsk = comment;
+                  break;
+                }
+              }
+
+              if (lastBotAsk) {
+                const askDate = new Date(lastBotAsk.created_at);
+                const daysSince = (now - askDate) / (1000 * 60 * 60 * 24);
+
+                if (daysSince >= DAYS_NEEDS_INFO) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: `${BOT_COMMENT}\n\n已超过 ${DAYS_NEEDS_INFO} 天未补充所需信息，自动关闭此 Issue。补充信息后可重新打开。`
+                  });
+                  await github.rest.issues.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    state: 'closed'
+                  });
+                  console.log(`已关闭 #${issue.number}: ${issue.title}`);
+                }
+              }
+            }
+
+            //-------------- 2. 关闭长期无活动的 stale Issue --------------
+            const { data: staleIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              sort: 'updated',
+              direction: 'asc',
+              per_page: 50
+            });
+
+            for (const issue of staleIssues) {
+              if (issue.pull_request) continue;
+              if (issue.labels.some(l => l.name === 'pinned')) continue;
+
+              const updatedDate = new Date(issue.updated_at);
+              const daysSince = (now - updatedDate) / (1000 * 60 * 60 * 24);
+
+              if (daysSince >= DAYS_STALE) {
+                // 先检查是否已经添加过 stale 标签
+                if (!issue.labels.some(l => l.name === 'stale')) {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    labels: ['stale']
+                  });
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: `${BOT_COMMENT}\n\n此 Issue 已超过 ${DAYS_STALE} 天无活动，如仍需要请回复，否则将自动关闭。`
+                  });
+                }
+              }
+            }
+
+            //-------------- 3. 关闭 stale 标签 + 额外 7 天未更新的 Issue --------------
+            const { data: staleLabeledIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'stale',
+              state: 'open',
+              per_page: 50
+            });
+
+            const STALE_GRACE_DAYS = 7;
+            for (const issue of staleLabeledIssues) {
+              if (issue.pull_request) continue;
+
+              // 获取 stale 标签添加时间
+              const events = await github.rest.issues.listEvents({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100
+              });
+
+              let staleLabeledAt = null;
+              for (const event of events.data.reverse()) {
+                if (event.event === 'labeled' && event.label?.name === 'stale') {
+                  staleLabeledAt = new Date(event.created_at);
+                  break;
+                }
+              }
+
+              if (staleLabeledAt) {
+                const daysSinceStale = (now - staleLabeledAt) / (1000 * 60 * 60 * 24);
+                if (daysSinceStale >= STALE_GRACE_DAYS) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: `${BOT_COMMENT}\n\n此 Issue 已标记为 stale 超过 ${STALE_GRACE_DAYS} 天，自动关闭。`
+                  });
+                  await github.rest.issues.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    state: 'closed'
+                  });
+                  console.log(`已关闭 stale #${issue.number}: ${issue.title}`);
+                }
+              }
+            }
+
+            console.log('自动关闭检查完成');
