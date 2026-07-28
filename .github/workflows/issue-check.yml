@@ -19,7 +19,7 @@ jobs:
             const title = issue.title || '';
             const labels = issue.labels.map(l => l.name);
 
-            const BOT_COMMENT = '🤖 **自动校验结果**';
+            const BOT_COMMENT = '**自动校验结果**';
             const REPLY_TIME = '7 天内';
 
             async function closeWithComment(reason) {

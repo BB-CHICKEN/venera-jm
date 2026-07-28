@@ -167,9 +167,11 @@ class JM extends ComicSource {
                 return;
             }
             if (this.compareVersions(remoteVersion, this.version) > 0) {
+                const notes = data.notes || "";
+                const notesText = notes ? `\n\n更新内容：\n${notes}` : "";
                 UI.showDialog(
                     "JMComic发现新版本",
-                    `当前版本：${this.version}\n最新版本：${remoteVersion}\n\n请前往漫画源列表更新最新版本\n不是蓝色按钮的更新，是漫画源版本号的右方时钟图标`,
+                    `当前版本：${this.version}\n最新版本：${remoteVersion}${notesText}\n\n请前往漫画源列表更新最新版本\n不是蓝色按钮的更新，是漫画源版本号的右方时钟图标`,
                     [
                         { text: "关闭", callback: () => {} }
                     ]
