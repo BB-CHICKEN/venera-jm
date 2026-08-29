@@ -27,8 +27,11 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
+          elif [ "${{ github.event_name }}" = "push" ]; then
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            latest_tag=$(git describe --tags --abbrev=0)
+            echo "tag=$latest_tag" >> $GITHUB_OUTPUT
           fi
 
       - name: 检出对应标签
