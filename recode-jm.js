@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.4"
+    version = "1.8.5"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
