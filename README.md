@@ -137,7 +137,7 @@
 
 ## 更新说明
 
-### v1.8.4 (2026-08)
+### v1.8.4 (2026-08-29)
 
 **Bug 修复**
 - 修复图片加载失败时 `TypeError: not a function` 错误，`_makeImageRetry` 从 IIFE 改为普通方法
