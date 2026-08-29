@@ -44,7 +44,9 @@ jobs:
           version=$(node -e "console.log(require('./version.json').version)")
           notes=$(node -e "console.log(require('./version.json').notes)")
           echo "version=$version" >> $GITHUB_OUTPUT
-          echo "notes=$notes" >> $GITHUB_OUTPUT
+          echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT
+          echo "$notes" >> $GITHUB_OUTPUT
+          echo "NOTES_EOF" >> $GITHUB_OUTPUT
 
       - name: 生成 Release Body
         id: body
