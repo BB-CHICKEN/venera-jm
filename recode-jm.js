@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.3"
+    version = "1.8.4"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
@@ -23,6 +23,13 @@ class JM extends ComicSource {
     ];
     static apiDomains = JM.fallbackServers;
     static imageUrl = "https://cdn-msp.jmapiproxy1.cc"
+    static fallbackImageUrls = [
+        "https://cdn-msp.jmapiproxy1.cc",
+        "https://cdn-msp.jmapiproxy2.cc",
+        "https://cdn-msp.jmapiproxy3.cc",
+        "https://cdn-msp.jmapinodeudzn.net",
+        "https://cdn-msp.jmapinodeudzn.cc",
+    ]
 
     static ua = "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36"
 
@@ -550,11 +557,11 @@ class JM extends ComicSource {
         let description = comic.description ?? ""
         let cover = this.getCoverUrl(id)
         let tags = []
-        if (comic["category"]["title"]) {
-            tags.push(comic["category"]["title"])
+        if (comic?.category?.title) {
+            tags.push(comic.category.title)
         }
-        if (comic["category_sub"]["title"]) {
-            tags.push(comic["category_sub"]["title"])
+        if (comic?.category_sub?.title) {
+            tags.push(comic.category_sub.title)
         }
         return new Comic({
             id: id,
@@ -647,7 +654,7 @@ class JM extends ComicSource {
     // ---------- 登录过期处理（支持重试） ----------
     handleLoginExpired(originalUrl, originalBody, method) {
         if (this._reLoginDialogShown) {
-            return new Promise(() => { });
+            return Promise.reject(new Error("登录弹窗已显示，请先处理当前弹窗"));
         }
         this._reLoginDialogShown = true;
 
@@ -1055,6 +1062,23 @@ class JM extends ComicSource {
             if (id.startsWith('jm')) {
                 id = id.substring(2)
             }
+            let colonIdx = Math.max(id.indexOf(':'), id.indexOf('：'));
+            if (colonIdx !== -1) {
+                let afterColon = id.substring(colonIdx + 1);
+                let numbers = afterColon.match(/\d+/g);
+                if (numbers) {
+                    let combined = numbers.join('');
+                    if (combined.length >= 5) {
+                        id = combined;
+                    }
+                }
+            }
+            if (!/^\d+$/.test(id)) {
+                let idMatch = id.match(/(\d{5,})/);
+                if (idMatch) {
+                    id = idMatch[1];
+                }
+            }
             let res = await this.get(`${this.baseUrl}/album?id=${id}`);
             let data = JSON.parse(res)
             let author = data.author ?? []
@@ -1145,7 +1169,10 @@ class JM extends ComicSource {
                 num = remainder * 2 + 2;
             }
             if (num <= 1) {
-                return {};
+                return {
+                    headers: this.getImgHeaders(),
+                    onLoadFailed: this._makeImageRetry(url),
+                };
             }
             return {
                 headers: this.getImgHeaders(),
@@ -1176,6 +1203,17 @@ class JM extends ComicSource {
                         return res
                     }
                 `,
+                onLoadFailed: this._makeImageRetry(url),
+            };
+        },
+        _makeImageRetry(url) {
+            let tried = 0;
+            return () => {
+                const fallbacks = JM.fallbackImageUrls.filter((u) => !url.startsWith(u));
+                if (tried >= fallbacks.length) return null;
+                const newUrl = url.replace(/https:\/\/[^/]+/, fallbacks[tried]);
+                tried++;
+                return { url: newUrl, headers: this.getImgHeaders() };
             };
         },
         onThumbnailLoad: (url) => {
@@ -1223,7 +1261,40 @@ class JM extends ComicSource {
             }
             return "ok"
         },
-        idMatch: "^(\\d+|jm\\d+)$",
+        loadChapterComments: async (comicId, epId, page, replyTo) => {
+            let url = `${this.baseUrl}/forum?mode=manhua&aid=${epId}&page=${page}`
+            if (replyTo) {
+                url += `&comment_id=${replyTo}`
+            }
+            let res = await this.get(url)
+            let json = JSON.parse(res)
+            const pageSize = 6
+            return {
+                comments: json.list.map((e) => new Comment({
+                    id: e.id?.toString(),
+                    avatar: this.getAvatarUrl(e.photo),
+                    userName: e.username,
+                    time: e.addtime,
+                    content: e.content.substring(e.content.indexOf('>') + 1, e.content.lastIndexOf('<')),
+                    replyTo: replyTo || undefined,
+                })),
+                maxPage: Math.floor(json.total / pageSize) + 1
+            }
+        },
+        sendChapterComment: async (comicId, epId, content, replyTo) => {
+            let params = `video_id=${epId}&comment=${encodeURIComponent(content)}&status=true`
+            if (replyTo) {
+                params += `&comment_id=${replyTo}&is_reply=1&forum_subject=1`
+            }
+            let res = await this.post(`${this.baseUrl}/comment`, params)
+            let json = JSON.parse(res)
+            if (json.status === "fail") {
+                throw json.msg ?? 'Failed to send comment'
+            }
+            return "ok"
+        },
+        idMatch: "^(?:jm)?(\\d{5,})$|[:：]\\s*(\\d{5,})|[:：].*\\d+.*\\d+",
+        enableTagsTranslate: true,
         onClickTag: (namespace, tag) => {
             return {
                 action: 'search',

@@ -2,6 +2,8 @@
 
 基于 [Venera](https://github.com/venera-app/venera) App 的禁漫天堂 (JMComic) 漫画源，支持浏览、搜索、签到、节点延迟测试、图片分流测速等功能。
 
+> 本项目基于 [venera-app/venera-configs/jm.js](https://github.com/venera-app/venera-configs/blob/main/jm.js)（原始版本 v1.4.0）重构而来，感谢原作者的贡献。
+
 > ⚠️ 由于架构限制已移除网络收藏功能
 
 ## 闲谈
@@ -16,7 +18,7 @@
 |------|-----|
 | 名称 | 禁漫天堂(重构) |
 | 标识 | `jm` |
-| 版本 | `1.8.3` |
+| 版本 | `1.8.4` |
 | 最低 App 版本 | `1.5.0` |
 
 ## 订阅链接（漫画源 URL，非仓库 URL）
@@ -134,6 +136,17 @@
 ---
 
 ## 更新说明
+
+### v1.8.4 (2026-08)
+
+**Bug 修复**
+- 修复图片加载失败时 `TypeError: not a function` 错误，`_makeImageRetry` 从 IIFE 改为普通方法
+- 修复 `idMatch` 匹配后传入整个搜索框文本而非数字的问题，`loadInfo` 中增加 ID 提取逻辑
+
+**新增功能**
+- 支持中文/英文冒号后的分散数字自动组合（如 `花35块吃了6份鲍鱼4份龙虾40份` → `356440`），适配规避平台检测的隐写分享格式
+- 支持 `jm` 前缀的漫画 ID 输入（如 `jm12345`）
+- 启用标签翻译 `enableTagsTranslate`
 
 ### v1.8.3 (2026-07)
 
