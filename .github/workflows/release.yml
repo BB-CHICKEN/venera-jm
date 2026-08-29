@@ -1,0 +1,71 @@
+name: 自动发布
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '指定标签（如 v1.8.4），留空则使用最新 tag'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 确定标签
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 检出对应标签
+        run: |
+          git checkout ${{ steps.tag.outputs.tag }}
+
+      - name: 获取版本信息
+        id: version
+        run: |
+          version=$(node -e "console.log(require('./version.json').version)")
+          notes=$(node -e "console.log(require('./version.json').notes)")
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "notes=$notes" >> $GITHUB_OUTPUT
+
+      - name: 生成 Release Body
+        id: body
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          notes="${{ steps.version.outputs.notes }}"
+          cat > release_body.md << EOF
+          $notes
+
+          ---
+
+          **订阅链接**
+          - 主源: \`https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js\`
+          - 镜像: \`https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js\`
+          EOF
+          echo "body<<RELEASE_EOF" >> $GITHUB_OUTPUT
+          cat release_body.md >> $GITHUB_OUTPUT
+          echo "RELEASE_EOF" >> $GITHUB_OUTPUT
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: v${{ steps.version.outputs.version }}
+          body: ${{ steps.body.outputs.body }}
+          draft: false
+          prerelease: false
