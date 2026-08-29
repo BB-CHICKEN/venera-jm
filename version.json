@@ -1,1 +1,1 @@
-{"version": "1.8.4", "notes": "新增：章节评论加载与发送、分散数字自动组合、jm前缀ID、图片重试分流、标签翻译\n修复：图片加载TypeError、登录弹窗死锁、分类空值崩溃、idMatch传入整个搜索框\n改进：idMatch正则支持冒号+分散数字、图片加载失败兜底"}
+{"version": "1.8.5", "notes": "修复：_makeImageRetry 箭头函数 this 上下文错误导致图片加载 TypeError (#2)"}
