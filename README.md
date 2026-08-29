@@ -140,7 +140,7 @@
 ### v1.8.5 (2026-08-30)
 
 **Bug 修复**
-- 修复 `_makeImageRetry` 箭头函数 `this` 上下文错误，导致图片加载时抛出 `TypeError` (#2)
+- 修复 `_makeImageRetry` 箭头函数 `this` 上下文错误，导致图片加载时抛出 `TypeError` (https://github.com/BB-CHICKEN/venera-jm/issues/2)
 
 ### v1.8.4 (2026-08-29)
 
