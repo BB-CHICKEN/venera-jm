@@ -1171,7 +1171,7 @@ class JM extends ComicSource {
             if (num <= 1) {
                 return {
                     headers: this.getImgHeaders(),
-                    onLoadFailed: this._makeImageRetry(url),
+                    onLoadFailed: this.comic._makeImageRetry(url),
                 };
             }
             return {
@@ -1203,10 +1203,10 @@ class JM extends ComicSource {
                         return res
                     }
                 `,
-                onLoadFailed: this._makeImageRetry(url),
+                onLoadFailed: this.comic._makeImageRetry(url),
             };
         },
-        _makeImageRetry(url) {
+        _makeImageRetry: (url) => {
             let tried = 0;
             return () => {
                 const fallbacks = JM.fallbackImageUrls.filter((u) => !url.startsWith(u));
