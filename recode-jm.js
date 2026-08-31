@@ -1110,6 +1110,10 @@ class JM extends ComicSource {
             let date = new Date(updateTimeStamp * 1000)
             let updateDate = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 
+            // ---------- 构造详情页链接（用于复制链接） ----------
+            let webDomain = this.link?.domains?.[0] || 'www.jmcomic.cc';
+            let url = `https://${webDomain}/album/${id}`;
+
             return new ComicDetails({
                 title: data.name,
                 cover: this.getCoverUrl(id),
@@ -1126,6 +1130,7 @@ class JM extends ComicSource {
                 recommend: related,
                 isLiked: data.liked ?? false,
                 updateTime: updateDate,
+                url: url,   // 新增
             })
         },
         loadEp: async (comicId, epId) => {
@@ -1301,6 +1306,23 @@ class JM extends ComicSource {
                 keyword: tag,
             }
         },
+        // ---------- 链接配置（供框架识别和生成链接） ----------
+        link: {
+            domains: [
+                'www.jmcomic.cc',
+                'jmcomic.cc',
+                'www.jmcomic2.cc',
+                'jmcomic2.cc',
+                'www.18comic.org',
+                '18comic.org'
+            ],
+            linkToId: (url) => {
+                let match = url.match(/\/album\/(\d+)/i) ||
+                            url.match(/\/g\/(\d+)/i) ||
+                            url.match(/\/comic\/(\d+)/i);
+                return match ? match[1] : null;
+            }
+        }
     }
 
     // ---------- 设置 ----------
