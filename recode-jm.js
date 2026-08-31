@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.6"
+    version = "1.8.5"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
@@ -841,7 +841,7 @@ class JM extends ComicSource {
             this.saveData("uid", null);
         },
 
-        registerWebsite: "https://18comic.vip/signup"   // ← 新增注册链接
+        registerWebsite: "https://18comic.vip/signup"   // 注册入口
     }
 
     // ---------- 探索 ----------
@@ -1110,8 +1110,8 @@ class JM extends ComicSource {
             let date = new Date(updateTimeStamp * 1000)
             let updateDate = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 
-            // ---------- 构造详情页链接（用于复制链接） ----------
-            let webDomain = this.link?.domains?.[0] || 'www.jmcomic.cc';
+            // ---------- 构造详情页链接（优先使用 18comic.vip） ----------
+            let webDomain = this.link?.domains?.[0] || '18comic.vip';   // 改为 18comic.vip
             let url = `https://${webDomain}/album/${id}`;
 
             return new ComicDetails({
@@ -1130,7 +1130,7 @@ class JM extends ComicSource {
                 recommend: related,
                 isLiked: data.liked ?? false,
                 updateTime: updateDate,
-                url: url,   // 新增
+                url: url,   // 供复制链接使用
             })
         },
         loadEp: async (comicId, epId) => {
@@ -1309,6 +1309,8 @@ class JM extends ComicSource {
         // ---------- 链接配置（供框架识别和生成链接） ----------
         link: {
             domains: [
+                '18comic.vip',              // 优先使用该域名
+                'www.18comic.vip',
                 'www.jmcomic.cc',
                 'jmcomic.cc',
                 'www.jmcomic2.cc',
