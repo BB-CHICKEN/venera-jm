@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+    paths:
+      - 'index.json'
   workflow_dispatch:
     inputs:
       tag:
@@ -27,22 +31,23 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "push" ]; then
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            latest_tag=$(git describe --tags --abbrev=0)
-            echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+            version=$(node -e "const data=require('./index.json'); console.log('v' + data[0].version)")
+            echo "tag=$version" >> $GITHUB_OUTPUT
           fi
 
       - name: 检出对应标签
+        if: github.event_name != 'push' || github.ref_type == 'tag'
         run: |
           git checkout ${{ steps.tag.outputs.tag }}
 
-      - name: 获取版本信息
+      - name: 获取版本信息（从 index.json）
         id: version
         run: |
-          version=$(node -e "console.log(require('./version.json').version)")
-          notes=$(node -e "console.log(require('./version.json').notes)")
+          version=$(node -e "const data=require('./index.json'); console.log(data[0].version)")
+          notes=$(node -e "const data=require('./index.json'); console.log(data[0].description)")
           echo "version=$version" >> $GITHUB_OUTPUT
           echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT
           echo "$notes" >> $GITHUB_OUTPUT
@@ -59,18 +64,33 @@ jobs:
           ---
 
           **订阅链接**
-          - 主源: \`https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js\`
-          - 镜像: \`https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js\`
+          - Release: \`https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js\`
+          - 直连: \`https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js\`
+          - 镜像: \`https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/recode-jm.js\`
+          - 漫画源仓库: \`https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json\`
           EOF
           echo "body<<RELEASE_EOF" >> $GITHUB_OUTPUT
           cat release_body.md >> $GITHUB_OUTPUT
           echo "RELEASE_EOF" >> $GITHUB_OUTPUT
 
-      - name: 创建 Release
+      - name: 创建或更新 Tag
+        if: github.event_name == 'push' && github.ref_type != 'tag'
+        run: |
+          tag="v${{ steps.version.outputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            git tag -d "$tag"
+            git push origin ":refs/tags/$tag" || true
+          fi
+          git tag "$tag"
+          git push origin "$tag"
+
+      - name: 上传 recode-jm.js 到 Release
+        if: github.event_name != 'push' || github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: v${{ steps.version.outputs.version }}
           body: ${{ steps.body.outputs.body }}
+          files: recode-jm.js
           draft: false
           prerelease: false

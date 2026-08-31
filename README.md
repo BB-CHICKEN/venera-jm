@@ -6,6 +6,8 @@
 
 > ⚠️ 由于架构限制已移除网络收藏功能
 
+> **开发方向说明**：由于 Venera 原版已停更，后续开发将基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 进行适配与维护。Venera-Next 是 Venera 的社区维护分支，保持了与原版的兼容性。
+
 ## 闲谈
 
 ### 为何要重构这个插件？
@@ -18,15 +20,18 @@
 |------|-----|
 | 名称 | 禁漫天堂(重构) |
 | 标识 | `jm` |
-| 版本 | `1.8.5` |
+| 版本 | `1.8.6` |
 | 最低 App 版本 | `1.5.0` |
 
 ## 订阅链接（漫画源 URL，非仓库 URL）
 
 | 序号 | 链接 | 说明 |
 |------|------|------|
-| 1 | `https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js` | 可能需要魔法 |
-| 2 | `https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js` | 镜像源 |
+| 1 | `https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js` | GitHub Release（推荐） |
+| 2 | `https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js` | 直连源 |
+| 3 | `https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/recode-jm.js` | 镜像源 |
+| 4 | `https:///raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json` | 漫画源仓库 |
+> 版本校验已改为通过 `index.json` 进行，确保各第三方维护版本可正常获取更新。`index.json` 中包含漫画源的 `url` 字段，供不同分支版本定位正确的更新来源。
 
 ---
 
@@ -136,6 +141,18 @@
 ---
 
 ## 更新说明
+
+### v1.8.6 (2026-08-31)
+
+**项目重构**
+- 版本校验改为 `index.json`，新增 `url` 字段确保第三方维护版本（Venera-Next 等）可正常获取更新
+- 更新链接改为 GitHub Release 最新下载链接
+- `release.yml`：`index.json` 变更时自动发布 Release 并上传 `recode-jm.js`
+- README 标明后续基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 开发
+
+**搜索匹配增强**
+- 无冒号时检测文字中分散数字 ≥ 5 位自动组合传入（如 `花35块吃了6份鲍鱼4份龙虾40份` → `356440`）
+- JM 大写适配：`JM`/`Jm`/`jM` 前缀均可识别
 
 ### v1.8.5 (2026-08-30)
 

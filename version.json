@@ -1,1 +1,0 @@
-{"version": "1.8.5", "notes": "修复：_makeImageRetry 箭头函数 this 上下文错误导致图片加载 TypeError (https://github.com/BB-CHICKEN/venera-jm/issues/2)"}

@@ -1,12 +1,12 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.5"
+    version = "1.8.6"
     minAppVersion = "1.5.0"
 
     static jmVersion = "2.0.16"
     static jmPkgName = "com.example.app"
-    url = "https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js"
+    url = "https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js"
 
     dailyCheckInInProgress = false
     _loggedIn = false
@@ -148,8 +148,8 @@ class JM extends ComicSource {
     async checkVersion() {
         try {
             const urls = [
-                "https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/version.json",
-                "https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/version.json"
+                "https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json",
+                "https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json"
             ];
             let res = null;
             for (const url of urls) {
@@ -168,17 +168,18 @@ class JM extends ComicSource {
                 return;
             }
             const data = await res.json();
-            const remoteVersion = data.version;
+            const entry = Array.isArray(data) ? data.find(e => e.key === this.key) : data;
+            const remoteVersion = entry?.version;
             if (!remoteVersion) {
                 console.warn("版本检查失败：无法解析远程版本号");
                 return;
             }
             if (this.compareVersions(remoteVersion, this.version) > 0) {
-                const notes = data.notes || "";
+                const notes = entry?.description || "";
                 const notesText = notes ? `\n\n更新内容：\n${notes}` : "";
                 UI.showDialog(
                     "JMComic发现新版本",
-                    `当前版本：${this.version}\n最新版本：${remoteVersion}${notesText}\n\n请前往漫画源列表更新最新版本\n不是蓝色按钮的更新，是漫画源版本号的右方时钟图标`,
+                    `当前版本：${this.version}\n最新版本：${remoteVersion}${notesText}\n\n请前往漫画源列表更新最新版本`,
                     [
                         { text: "关闭", callback: () => {} }
                     ]
@@ -1059,13 +1060,21 @@ class JM extends ComicSource {
     // ---------- 漫画详情 ----------
     comic = {
         loadInfo: async (id) => {
-            if (id.startsWith('jm')) {
+            if (id.startsWith('jm') || id.startsWith('JM')) {
                 id = id.substring(2)
             }
             let colonIdx = Math.max(id.indexOf(':'), id.indexOf('：'));
             if (colonIdx !== -1) {
                 let afterColon = id.substring(colonIdx + 1);
                 let numbers = afterColon.match(/\d+/g);
+                if (numbers) {
+                    let combined = numbers.join('');
+                    if (combined.length >= 5) {
+                        id = combined;
+                    }
+                }
+            } else if (!/^\d+$/.test(id)) {
+                let numbers = id.match(/\d+/g);
                 if (numbers) {
                     let combined = numbers.join('');
                     if (combined.length >= 5) {
@@ -1293,7 +1302,7 @@ class JM extends ComicSource {
             }
             return "ok"
         },
-        idMatch: "^(?:jm)?(\\d{5,})$|[:：]\\s*(\\d{5,})|[:：].*\\d+.*\\d+",
+        idMatch: "^(?:[Jj][Mm])?(\\d{5,})$|[:：]\\s*(\\d{5,})|[:：].*\\d+.*\\d+|^(?!.*[:：])(?=.*\\d.*\\d.*\\d.*\\d.*\\d)",
         enableTagsTranslate: true,
         onClickTag: (namespace, tag) => {
             return {

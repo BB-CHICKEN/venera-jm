@@ -1,0 +1,10 @@
+[
+    {
+        "name": "禁漫天堂",
+        "fileName": "recode-jm.js",
+        "key": "jm",
+        "version": "1.8.6",
+        "url": "https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js",
+        "description": "更新链接改为 GitHub Release 最新下载链接/br搜索匹配增强：检测文字中分散数字 ≥ 5 位自动组合传入（如 `花35块吃了6份鲍鱼4份龙虾40份` → `356440`）/br搜索匹配增强：检测文字中分散数字 大写适配：`JM`/`Jm`/`jM` 前缀均可识别"
+    }
+]
