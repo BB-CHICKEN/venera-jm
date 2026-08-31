@@ -34,7 +34,7 @@ jobs:
           elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            version=$(node -e "const data=require('./index.json'); console.log('v' + data[0].version)")
+            version=$(node -e "console.log('v' + require('./index.json')[0].version)")
             echo "tag=$version" >> $GITHUB_OUTPUT
           fi
 
@@ -43,35 +43,21 @@ jobs:
         run: |
           git checkout ${{ steps.tag.outputs.tag }}
 
-      - name: 获取版本信息（从 index.json）
+      - name: 获取版本号
         id: version
         run: |
-          version=$(node -e "const data=require('./index.json'); console.log(data[0].version)")
-          notes=$(node -e "const data=require('./index.json'); console.log(data[0].description)")
+          version=$(node -e "console.log(require('./index.json')[0].version)")
           echo "version=$version" >> $GITHUB_OUTPUT
-          echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT
-          echo "$notes" >> $GITHUB_OUTPUT
-          echo "NOTES_EOF" >> $GITHUB_OUTPUT
 
       - name: 生成 Release Body
-        id: body
         run: |
-          version="${{ steps.version.outputs.version }}"
-          notes="${{ steps.version.outputs.notes }}"
-          cat > release_body.md << EOF
-          $notes
-
-          ---
-
-          **订阅链接**
-          - Release: \`https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js\`
-          - 直连: \`https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js\`
-          - 镜像: \`https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/recode-jm.js\`
-          - 漫画源仓库: \`https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json\`
-          EOF
-          echo "body<<RELEASE_EOF" >> $GITHUB_OUTPUT
-          cat release_body.md >> $GITHUB_OUTPUT
-          echo "RELEASE_EOF" >> $GITHUB_OUTPUT
+          node -e "
+          const data = require('./index.json');
+          const fs = require('fs');
+          const notes = data[0].description || '';
+          const body = notes + '\n\n---\n\n**订阅链接**\n- Release: \`https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js\`\n- 直连: \`https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js\`\n- 镜像: \`https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/recode-jm.js\`';
+          fs.writeFileSync('release_body.md', body);
+          "
 
       - name: 创建或更新 Tag
         if: github.event_name == 'push' && github.ref_type != 'tag'
@@ -90,7 +76,7 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: v${{ steps.version.outputs.version }}
-          body: ${{ steps.body.outputs.body }}
+          body_path: release_body.md
           files: recode-jm.js
           draft: false
           prerelease: false
