@@ -1,0 +1,4 @@
+{
+    "version": "1.8.6",
+    "notes": "v1.8.6 更新内容：\n- 版本校验迁移至 index.json，新增 url 字段确保第三方版本可正常更新\n- 更新链接改为 GitHub Release 最新下载链接\n- 搜索匹配增强：无冒号时检测分散数字 >=5 位自动组合传入\n- JM 大写适配：JM/Jm/jM 前缀均可识别\n- release.yml 自动发布 Release 并上传 JS 文件"
+}
