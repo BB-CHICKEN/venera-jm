@@ -27,6 +27,7 @@
 |------|------|------|
 | 1 | `https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js` | 可能需要魔法 |
 | 2 | `https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm.js/main/recode-jm.js` | 镜像源 |
+| 3 | `https:///raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json` | 来源库 |
 
 ---
 
