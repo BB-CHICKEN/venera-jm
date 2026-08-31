@@ -123,6 +123,11 @@ class JM extends ComicSource {
 
     // ---------- 初始化 ----------
     async init() {
+        // 读取网页域名设置并动态更新相关属性
+        let domain = this.loadSetting('webDomain') || '18comic.vip';
+        this.account.registerWebsite = `https://${domain}/signup`;
+        this.comic.link.domains = [domain];
+
         if (this.loadSetting('refreshDomainsOnStart')) await this.refreshApiDomains(false);
         this.refreshImgUrl(false);
         await this._autoLogin();
@@ -549,6 +554,7 @@ class JM extends ComicSource {
             return null
         }
     }
+
     // ---------- 数据转换 ----------
     parseComic(comic) {
         let id = comic.id.toString()
@@ -841,7 +847,8 @@ class JM extends ComicSource {
             this.saveData("uid", null);
         },
 
-        registerWebsite: "https://18comic.vip/signup"   // 注册入口
+        // 将在 init 中动态赋值
+        registerWebsite: null
     }
 
     // ---------- 探索 ----------
@@ -1110,9 +1117,9 @@ class JM extends ComicSource {
             let date = new Date(updateTimeStamp * 1000)
             let updateDate = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 
-            // ---------- 构造详情页链接（优先使用 18comic.vip） ----------
-            let webDomain = this.link?.domains?.[0] || '18comic.vip';   // 改为 18comic.vip
-            let url = `https://${webDomain}/album/${id}`;
+            // 动态获取域名构造链接（从设置读取）
+            let domain = this.loadSetting('webDomain') || '18comic.vip';
+            let url = `https://${domain}/album/${id}`;
 
             return new ComicDetails({
                 title: data.name,
@@ -1130,7 +1137,7 @@ class JM extends ComicSource {
                 recommend: related,
                 isLiked: data.liked ?? false,
                 updateTime: updateDate,
-                url: url,   // 供复制链接使用
+                url: url
             })
         },
         loadEp: async (comicId, epId) => {
@@ -1308,16 +1315,8 @@ class JM extends ComicSource {
         },
         // ---------- 链接配置（供框架识别和生成链接） ----------
         link: {
-            domains: [
-                '18comic.vip',              // 优先使用该域名
-                'www.18comic.vip',
-                'www.jmcomic.cc',
-                'jmcomic.cc',
-                'www.jmcomic2.cc',
-                'jmcomic2.cc',
-                'www.18comic.org',
-                '18comic.org'
-            ],
+            // 将在 init 中动态赋值
+            domains: [],
             linkToId: (url) => {
                 let match = url.match(/\/album\/(\d+)/i) ||
                             url.match(/\/g\/(\d+)/i) ||
@@ -1405,9 +1404,16 @@ class JM extends ComicSource {
         },
         jm_pwd: {
             title: "JM 密码(请退出下方的软件登录)",
-            type: "input",   // 如果框架不支持 password，可改为 input，但会明文显示
+            type: "input",
             default: ""
         },
+        // ---------- 新增：网页域名配置（用户可自定义） ----------
+        webDomain: {
+            title: "网页域名（用于复制链接与注册）",
+            type: "input",
+            default: "18comic.vip",
+            description: "例如：18comic.vip 或 www.jmcomic.cc，若官网域名变更请在此修改"
+        }
     }
 
     // ---------- 翻译 ----------
@@ -1437,6 +1443,7 @@ class JM extends ComicSource {
             'jm_pwd': 'JM 密码',
             'checkUpdateOnStart': '启动时检查更新',
             '启动时检查更新': '启动时检查更新',
+            'webDomain': '网页域名',
         },
         'zh_TW': {
             'Refresh Domain List': '刷新域名列表',
@@ -1463,6 +1470,7 @@ class JM extends ComicSource {
             'jm_pwd': 'JM 密碼',
             'checkUpdateOnStart': '啟動時檢查更新',
             '启动时检查更新': '啟動時檢查更新',
+            'webDomain': '網頁域名',
         },
     }
 }
