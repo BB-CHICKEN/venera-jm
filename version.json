@@ -1,1 +1,1 @@
-{"version": "1.8.5", "notes": "修复：_makeImageRetry 箭头函数 this 上下文错误导致图片加载 TypeError (https://github.com/BB-CHICKEN/venera-jm/issues/2)"}
+{"version": "1.8.6", "notes": "新增漫画详情页右上角菜单里可复制漫画网页链接；新增账号登录页可以注册账号；新增index.json文件，方便部分venera第三方维护客户端更新本漫画源 (https://github.com/BB-CHICKEN/venera-jm/pull/3)"}
