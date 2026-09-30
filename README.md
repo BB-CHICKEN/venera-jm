@@ -1,18 +1,16 @@
-# 禁漫天堂(重构) — [Venera](https://github.com/venera-app/venera) 漫画源插件
+# 禁漫天堂(重构) — [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 漫画源插件
 
-基于 [Venera](https://github.com/venera-app/venera) App 的禁漫天堂 (JMComic) 漫画源，支持浏览、搜索、签到、节点延迟测试、图片分流测速等功能。
+基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) App 的禁漫天堂 (JMComic) 漫画源，支持浏览、搜索、收藏、签到、节点延迟测试、图片分流测速等功能。
 
 > 本项目基于 [venera-app/venera-configs/jm.js](https://github.com/venera-app/venera-configs/blob/main/jm.js)（原始版本 v1.4.0）重构而来，感谢原作者的贡献。
 
-> ⚠️ 由于架构限制已移除网络收藏功能
-
-> **开发方向说明**：由于 Venera 原版已停更，后续开发将基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 进行适配与维护。Venera-Next 是 Venera 的社区维护分支，保持了与原版的兼容性。
+> 开发方向：由于 Venera 原版已停更，后续开发基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 进行适配与维护。
 
 ## 闲谈
 
 ### 为何要重构这个插件？
-- 不知为何，本来的插件经常弹出登录过期，很烦人(怒💢)
-- 增添一些我认为需要的功能
+- 原插件经常弹出登录过期，现已改用框架原生登录彻底解决
+- 增添一些我认为需要的功能（测速、收藏、签到等）
 
 ## 基本信息
 
@@ -20,18 +18,16 @@
 |------|-----|
 | 名称 | 禁漫天堂(重构) |
 | 标识 | `jm` |
-| 版本 | `1.8.6` |
-| 最低 App 版本 | `1.5.0` |
+| 版本 | `1.9.0` |
+| 最低 App 版本 | `1.16.0` |
 
-## 订阅链接（漫画源 URL，非仓库 URL）
+## 订阅链接
 
-| 序号 | 链接 | 说明 |
+| 类型 | 链接 | 说明 |
 |------|------|------|
-| 1 | `https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js` | GitHub Release（推荐） |
-| 2 | `https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/refs/heads/main/recode-jm.js` | 直连源 |
-| 3 | `https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/recode-jm.js` | 镜像源 |
-| 4 | `https:///raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json` | 漫画源仓库 |
-> 版本校验已改为通过 `index.json` 进行，确保各第三方维护版本可正常获取更新。`index.json` 中包含漫画源的 `url` 字段，供不同分支版本定位正确的更新来源。
+| 源仓库 | `https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json` | 仓库目录（推荐，可自动更新） |
+| 脚本直链 | `https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js` | GitHub Release |
+| 备用直链 | `https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/recode-jm.js` | 镜像加速
 
 ---
 
@@ -51,12 +47,12 @@
 - 标签点击直达搜索
 
 ### 账号功能
-- 账号自动重新登录（可选）
+- 框架原生登录（App 内账号管理，自动续期）
 - 每日自动签到（可选）
 - 手动签到
+- 网络收藏：多收藏夹、添加/删除/移动收藏
 
 ### 域名管理
-- 启动时检查更新（可选，发现新版本弹窗提醒）
 - 启动时自动刷新 API 域名列表（可选）
 - 5 条内置备用域名
 - 手动刷新域名
@@ -86,16 +82,13 @@
 |--------|------|--------|------|
 | 刷新域名列表 | 按钮 | - | 手动从 CDN 拉取最新域名并应用 |
 | 启动时刷新域名列表 | 开关 | 开启 | App 启动时自动刷新 |
-| 启动时检查更新 | 开关 | 开启 | 启动时从 GitHub 检查最新版本，发现新版弹窗提醒 |
 | Api域名 | 下拉 | 1 | 选择 API 线路 (1-5) |
 | 图片分流 | 下拉 | 1 | 选择图片 CDN 线路 (1-5) |
 | 节点优选 | 按钮 | - | 并行测试所有 API 节点延迟 |
 | 图片分流测速 | 按钮 | - | 测试 5 条图片 CDN 下载速度 |
 | 每日自动签到 | 开关 | 关闭 | 启动时自动签到 |
 | 手动签到 | 按钮 | - | 立即执行签到 |
-| 自动重登（保持登录） | 开关 | 开启 | 401 时自动尝试重新登录 |
-| JM 账号 | 输入框 | - | 替换软件内登录（明文存储） |
-| JM 密码 | 输入框 | - | 退出软件登录后使用（明文存储） |
+| 收藏排序 | 下拉 | 最新 | 收藏夹漫画排序方式 |
 
 ---
 
@@ -103,22 +96,11 @@
 
 - **数据加密**：AES-ECB 解密 API 响应，基于时间戳的动态密钥
 - **图片解密**：基于章节 ID 和图片名的 MD5 哈希动态计算混淆参数，支持多种混淆算法
-- **鉴权**：基于时间戳的 Token 签名（`MD5(time + 18comicAPPContent)`）
+- **鉴权**：基于时间戳的 Token 签名（`MD5(time + 18comicAPPContent)`），Cookie + Token 双重认证
+- **登录**：使用 Venera-Next 框架原生登录，401 时抛出 `Login expired` 由框架自动重登
+- **更新**：版本检查由框架通过 `index.json` 仓库目录自动管理
 - **域名分发**：从 CDN 拉取加密域名列表，本地解密后动态切换
 - **并发测速**：节点延迟使用 `Network.get` 实现真正并发；图片测速通过 `Promise.all` 并行下载多张图片
-
----
-
-## ⚠️ 账号安全提示
-
-> **重要提醒**
->
-> 受限于插件框架技术原因，本插件内的 **JM 账号** 和 **JM 密码** 以 **明文形式储存** 于 App 配置数据中。
->
-> - ❌ **切勿** 将导出的应用数据分享给他人
-> - ❌ **不要** 在公共设备 / 他人设备上使用账号登录
-> - ✅ 导出 / 备份 App 数据前，请先清空账号密码后再分享
-> - ✅ 如需分享 App 数据，请谨慎检查是否包含敏感信息
 
 ---
 
@@ -129,86 +111,20 @@
 - 本插件不对任何第三方网站、内容的版权纠纷承担责任
 - 使用本插件所产生的一切法律责任由使用者自行承担
 - 请在法律允许的范围内使用，请勿用于商业用途
-- 账号密码明文储存属于技术限制，开发者不对账号安全做任何保证
 
 ---
 
 ## 兼容性
 
-- 最低 Venera App 版本：`1.5.0`
+- 最低 Venera-Next 版本：`1.16.0`
 - 支持语言：简体中文、繁體中文
 
 ---
 
 ## 更新说明
 
-### v1.8.6 (2026-08-31)
+详见 [CHANGELOG.md](CHANGELOG.md)
 
-**项目重构**
-- 版本校验改为 `index.json`，新增 `url` 字段确保第三方维护版本（Venera-Next 等）可正常获取更新
-- 更新链接改为 GitHub Release 最新下载链接
-- `release.yml`：`index.json` 变更时自动发布 Release 并上传 `recode-jm.js`
-- README 标明后续基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 开发
+## Star History
 
-**搜索匹配增强**
-- 无冒号时检测文字中分散数字 ≥ 5 位自动组合传入（如 `花35块吃了6份鲍鱼4份龙虾40份` → `356440`）
-- JM 大写适配：`JM`/`Jm`/`jM` 前缀均可识别
-
-### v1.8.5 (2026-08-30)
-
-**Bug 修复**
-- 修复 `_makeImageRetry` 箭头函数 `this` 上下文错误，导致图片加载时抛出 `TypeError` (https://github.com/BB-CHICKEN/venera-jm/issues/2)
-
-### v1.8.4 (2026-08-29)
-
-**Bug 修复**
-- 修复图片加载失败 `TypeError: not a function`，`_makeImageRetry` 从 IIFE 改为普通方法
-- 修复 `idMatch` 匹配后传入整个搜索框文本而非数字的问题，`loadInfo` 中增加 ID 提取逻辑
-- 修复 `handleLoginExpired` 登录弹窗挂起死锁（空 `Promise` 改为 `Promise.reject`）
-- 修复分类字段空值崩溃（`category` / `category_sub` 增加可选链 `?.`）
-- 修复图片加载失败兜底缺少 `headers` 和 `onLoadFailed` 回调
-
-**新增功能**
-- 新增 `loadChapterComments` / `sendChapterComment` 章节评论加载与发送
-- 支持中文/英文冒号后分散数字自动组合（如 `花35块吃了6份鲍鱼4份龙虾40份` → `356440`），适配隐写分享格式
-- 支持 `jm` 前缀漫画 ID 输入（如 `jm12345`）
-- 新增 `_makeImageRetry` 图片加载失败自动切换分流重试
-- 启用标签翻译 `enableTagsTranslate`
-
-### v1.8.3 (2026-07-28)
-
-**新增功能**
-- 版本检查改为请求 `version.json` 校验文件，大幅减少流量消耗
-- 新增 GitHub Actions：Issue 自动校验（检查必填字段）+ 自动关闭（超时未补充信息 / 长期无活动）
-
-**改进**
-- 更新全部 API 域名（fallbackServers）和图片 CDN 域名
-- 图片分流测速优化：仅测 5 个选项对应的去重线路，复用 `_buildShuntMapping` 缓存
-- 图片分流映射改为动态去重，选项 N 自动映射到第 N 个唯一分流线路
-
-### v1.8.2 (2026-07-28)
-
-**新增功能**
-- 启动时版本检查：启动时自动从 GitHub 获取最新版本号，发现新版本弹窗提醒用户
-- 新增 `checkUpdateOnStart` 设置项（开关，默认开启），可关闭启动时检查更新
-- 支持 `ghfast.top` 代理与 `raw.githubusercontent.com` 直连双路回退，5秒超时保护
-
-### v1.8.1 (2026-07-27)
-
-**Bug 修复**
-- 修复图片分流测速中重复线路显示"与上相同"不准确的问题，改为显示"与线路X相同"明确标注来源
-
-### v1.8.0 (2026-07-26)
-
-**新增功能**
-- 节点延迟测试：一键并行测试所有 API 节点响应延迟，按延迟排序，标注最快节点
-- 图片分流测速：一键测试 5 条图片 CDN 线路下载速度，自动去重，标注最快线路
-
-**性能优化**
-- 节点延迟测试改用 `Network.get` 替代原生 `fetch`，实现真正的并发请求
-- 单节点超时设为 4 秒，避免慢节点拖慢整体测试
-- 图片分流测速采用两阶段流水线（并行取 CDN 域名 → 并行测速），CDN 域名自动去重
-
-**Bug 修复**
-- 修复评论发送失败：`status` 参数从 `undefined` 修正为 `'true'`
-- 修复评论接口参数：`/album_comment` 端点适配 `video_id` 参数名
+[![Star History Chart](https://api.star-history.com/svg?repos=BB-CHICKEN/venera-jm&type=Date)](https://star-history.com/#BB-CHICKEN/venera-jm&Date)
