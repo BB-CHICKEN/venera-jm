@@ -3,8 +3,9 @@
         "name": "禁漫天堂",
         "fileName": "recode-jm.js",
         "key": "jm",
-        "version": "1.8.6",
+        "version": "1.9.0",
+        "minAppVersion": "1.16.0",
         "url": "https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js",
-        "description": "v1.8.6 更新内容：\n- 版本校验迁移至 index.json，新增 url 字段确保第三方版本可正常更新\n- 更新链接改为 GitHub Release 最新下载链接\n- 搜索匹配增强：无冒号时检测分散数字 >=5 位自动组合传入\n- JM 大写适配：JM/Jm/jM 前缀均可识别\n- release.yml 自动发布 Release 并上传 JS 文件"
+        "description": "v1.9.0 更新内容：\n- 改用框架原生登录，移除自定义重登逻辑\n- 移除自定义版本检查，框架接管更新检测\n- 恢复网络收藏功能（收藏夹、添加/删除/移动收藏）\n- init()精简，网络请求移至后台异步执行，避免安装超时\n- 5xx错误不再触发重登录，避免级联崩溃\n- 详情/章节/评论字段null防御，修复宿主崩溃\n- 章节ID加ep_前缀，避免JS整数键重排序\n- viewMore改为跳转对象，符合框架规范\n- 日期补零、subtitle统一、throw统一Error"
     }
 ]

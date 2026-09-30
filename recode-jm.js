@@ -1,17 +1,14 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.8.6"
-    minAppVersion = "1.5.0"
+    version = "1.9.0"
+    minAppVersion = "1.16.0"
 
     static jmVersion = "2.0.16"
     static jmPkgName = "com.example.app"
     url = "https://github.com/BB-CHICKEN/venera-jm/releases/latest/download/recode-jm.js"
 
     dailyCheckInInProgress = false
-    _loggedIn = false
-    _reLoginDialogShown = false
-    _renewing = false
     _shuntMapping = null
 
     static fallbackServers = [
@@ -77,9 +74,6 @@ class JM extends ComicSource {
     }
 
     getApiHeaders(time) {
-        if (this.loadSetting("dailyCheckInTask")) {
-            this.dailyCheckIn(true)
-        }
         const jmAuthKey = "18comicAPPContent"
         let token = Convert.md5(Convert.encodeUtf8(`${time}${jmAuthKey}`))
 
@@ -121,93 +115,61 @@ class JM extends ComicSource {
         return `${this.imageUrl}/media/users/${imageName}`
     }
 
+    _sanitizeHtml(html) {
+        if (!html || typeof html !== 'string') return html || '';
+        const allowed = ['a', 'b', 'i', 'u', 's', 'br', 'span', 'img'];
+        const keep = new RegExp('</?(?:' + allowed.join('|') + ')\\b[^>]*>', 'gi');
+        const strip = /<[^>]+>/gi;
+        return html.replace(keep, '\x00$&\x00').replace(strip, '').replace(/\x00/g, '');
+    }
+
     // ---------- 初始化 ----------
     async init() {
-        if (this.loadSetting('refreshDomainsOnStart')) await this.refreshApiDomains(false);
-        this.refreshImgUrl(false);
-        await this._autoLogin();
-        if (this.loadSetting('checkUpdateOnStart')) {
-            this.checkVersion();
-        }
+        this._backgroundReady = false;
+        setTimeout(() => this._initBackground(), 0);
     }
 
-    // ---------- 版本检查 ----------
-    compareVersions(v1, v2) {
-        const parts1 = v1.split('.').map(Number);
-        const parts2 = v2.split('.').map(Number);
-        const maxLen = Math.max(parts1.length, parts2.length);
-        for (let i = 0; i < maxLen; i++) {
-            const a = parts1[i] || 0;
-            const b = parts2[i] || 0;
-            if (a > b) return 1;
-            if (a < b) return -1;
-        }
-        return 0;
-    }
-
-    async checkVersion() {
+    async _initBackground() {
+        if (this._backgroundReady) return;
         try {
-            const urls = [
-                "https://ghfast.top/https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json",
-                "https://raw.githubusercontent.com/BB-CHICKEN/venera-jm/main/index.json"
-            ];
-            let res = null;
-            for (const url of urls) {
-                try {
-                    res = await Promise.race([
-                        fetch(url, { headers: this.baseHeaders }),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-                    ]);
-                    if (res && res.status === 200) break;
-                } catch (e) {
-                    continue;
-                }
+            if (this.loadSetting('refreshDomainsOnStart')) await this.refreshApiDomains(false);
+            await this.refreshImgUrl(false);
+            await this._autoLogin();
+            if (this.loadSetting("dailyCheckInTask")) {
+                this.dailyCheckIn(true).catch(() => {});
             }
-            if (!res || res.status !== 200) {
-                console.warn("版本检查失败：无法获取远程版本信息");
-                return;
-            }
-            const data = await res.json();
-            const entry = Array.isArray(data) ? data.find(e => e.key === this.key) : data;
-            const remoteVersion = entry?.version;
-            if (!remoteVersion) {
-                console.warn("版本检查失败：无法解析远程版本号");
-                return;
-            }
-            if (this.compareVersions(remoteVersion, this.version) > 0) {
-                const notes = entry?.description || "";
-                const notesText = notes ? `\n\n更新内容：\n${notes}` : "";
-                UI.showDialog(
-                    "JMComic发现新版本",
-                    `当前版本：${this.version}\n最新版本：${remoteVersion}${notesText}\n\n请前往漫画源列表更新最新版本`,
-                    [
-                        { text: "关闭", callback: () => {} }
-                    ]
-                );
-            } else {
-                console.log(`版本检查完成：当前 ${this.version} 已是最新版本`);
-            }
+            this._backgroundReady = true;
         } catch (e) {
-            console.warn("版本检查失败", e);
+            console.log("后台初始化失败:", e);
         }
     }
 
-    // ---------- 自动登录（从设置读取凭证） ----------
+    // ---------- 启动时验证登录状态 ----------
     async _autoLogin() {
-        const username = this.loadSetting('jm_account');
-        const password = this.loadSetting('jm_pwd');
-        if (!username || !password) {
-            this._loggedIn = false;
-            console.warn("⚠️ 请在设置中填写 JM 账号和密码");
-            return;
-        }
         try {
-            await this.account.login(username, password);
-            this._loggedIn = true;
-            console.log("✅ 插件自动登录成功");
+            const valid = await this._verifyLogin();
+            if (valid) {
+                console.log("登录状态有效");
+                return;
+            }
         } catch (e) {
-            this._loggedIn = false;
-            console.warn("❌ 自动登录失败", e);
+            console.log("Cookie 验证失败:", e);
+        }
+        console.log("未登录或登录已过期");
+    }
+
+    async _verifyLogin() {
+        try {
+            let time = Math.floor(Date.now() / 1000);
+            let res = await Network.get(`${this.baseUrl}/favorite?page=1`, this.getApiHeaders(time));
+            if (res.status >= 500) {
+                console.log("服务器临时不可用 (" + res.status + ")，跳过登录验证");
+                return true;
+            }
+            return res.status === 200;
+        } catch (e) {
+            console.log("登录验证网络错误:", e);
+            return true;
         }
     }
 
@@ -553,8 +515,8 @@ class JM extends ComicSource {
     // ---------- 数据转换 ----------
     parseComic(comic) {
         let id = comic.id.toString()
-        let author = comic.author
-        let title = comic.name
+        let author = comic.author ?? ""
+        let title = comic.name ?? ""
         let description = comic.description ?? ""
         let cover = this.getCoverUrl(id)
         let tags = []
@@ -567,7 +529,7 @@ class JM extends ComicSource {
         return new Comic({
             id: id,
             title: title,
-            subTitle: author,
+            subtitle: author,
             cover: cover,
             tags: tags,
             description: description
@@ -600,22 +562,19 @@ class JM extends ComicSource {
                 let json = JSON.parse(res.body);
                 let message = json.errorMsg;
                 if (message === "請先登入會員") {
-                    if (this._loggedIn && this.loadSetting('autoReLogin')) {
-                        try {
-                            let renewed = await this._handleAutoRenew(url, null, 'GET');
-                            if (renewed !== false) return renewed;
-                        } catch (e) { }
-                    }
-                    return await this.handleLoginExpired(url, null, 'GET');
+                    throw new Error("Login expired");
                 }
-                throw message ?? '无效状态码：' + res.status;
+                throw new Error(message ?? `HTTP ${res.status}`);
             }
-            throw '无效状态码：' + res.status;
+            if (res.status >= 500) {
+                throw new Error(`服务器临时不可用 (${res.status})，请稍后重试`);
+            }
+            throw new Error(`HTTP ${res.status}`);
         }
         let json = JSON.parse(res.body)
         let data = json.data
         if (typeof data !== 'string') {
-            throw '无效数据'
+            throw new Error('无效数据')
         }
         return this.convertData(data, `${time}${kJmSecret}`)
     }
@@ -632,183 +591,54 @@ class JM extends ComicSource {
                 let json = JSON.parse(res.body);
                 let message = json.errorMsg;
                 if (message === "請先登入會員") {
-                    if (this._loggedIn && this.loadSetting('autoReLogin')) {
-                        try {
-                            let renewed = await this._handleAutoRenew(url, body, 'POST');
-                            if (renewed !== false) return renewed;
-                        } catch (e) { }
-                    }
-                    return await this.handleLoginExpired(url, body, 'POST');
+                    throw new Error("Login expired");
                 }
-                throw message ?? '无效状态码：' + res.status;
+                throw new Error(message ?? `HTTP ${res.status}`);
             }
-            throw '无效状态码：' + res.status;
+            if (res.status >= 500) {
+                throw new Error(`服务器临时不可用 (${res.status})，请稍后重试`);
+            }
+            throw new Error(`HTTP ${res.status}`);
         }
         let json = JSON.parse(res.body)
         let data = json.data
         if (typeof data !== 'string') {
-            throw '无效数据'
+            throw new Error('无效数据')
         }
         return this.convertData(data, `${time}${kJmSecret}`)
-    }
-
-    // ---------- 登录过期处理（支持重试） ----------
-    handleLoginExpired(originalUrl, originalBody, method) {
-        if (this._reLoginDialogShown) {
-            return Promise.reject(new Error("登录弹窗已显示，请先处理当前弹窗"));
-        }
-        this._reLoginDialogShown = true;
-
-        return new Promise((resolve, reject) => {
-            UI.showDialog(
-                "登录过期",
-                "登录已过期，是否使用设置中的账号密码重新登录？",
-                [
-                    {
-                        text: "取消",
-                        callback: () => {
-                            this._reLoginDialogShown = false;
-                            reject("用户取消重登");
-                        }
-                    },
-                    {
-                        text: "重新登录",
-                        callback: async () => {
-                            this._reLoginDialogShown = false;
-                            const username = this.loadSetting('jm_account');
-                            const password = this.loadSetting('jm_pwd');
-                            if (!username || !password) {
-                                UI.showMessage("请先在设置中填写账号和密码");
-                                reject("无凭证");
-                                return;
-                            }
-                            try {
-                                await this.account.login(username, password);
-                                this._loggedIn = true;
-                                UI.showMessage("✅ 登录成功，正在重试...");
-                                let result;
-                                if (method === 'GET') {
-                                    result = await this.get(originalUrl);
-                                } else {
-                                    result = await this.post(originalUrl, originalBody);
-                                }
-                                resolve(result);
-                            } catch (e) {
-                                UI.showMessage("❌ 登录失败，请检查账号密码或网络");
-                                reject("登录失败: " + (e.message || e));
-                            }
-                        }
-                    }
-                ]
-            );
-        });
-    }
-
-    // ---------- 自动续期逻辑 ----------
-    async _handleAutoRenew(originalUrl, originalBody, method) {
-        if (this._renewing) return false;
-        this._renewing = true;
-
-        try {
-            const username = this.loadSetting('jm_account');
-            const password = this.loadSetting('jm_pwd');
-            if (!username || !password) {
-                UI.showMessage("❌ 请先在设置中填写账号和密码");
-                return false;
-            }
-
-            let time = Math.floor(Date.now() / 1000);
-            let kJmSecret = "185Hcomic3PAPP7R";
-
-            let loginRes = await Network.post(`${this.baseUrl}/login`, {
-                ...this.getApiHeaders(time),
-                "Content-Type": "application/x-www-form-urlencoded"
-            }, `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
-
-            if (loginRes.status !== 200) {
-                UI.showMessage(`❌ 续期失败：HTTP ${loginRes.status}`);
-                return false;
-            }
-
-            let loginJson = JSON.parse(loginRes.body);
-            if (!loginJson.data || typeof loginJson.data !== 'string') {
-                UI.showMessage("❌ 续期失败：响应异常");
-                return false;
-            }
-
-            let loginData = this.convertData(loginJson.data, `${time}${kJmSecret}`);
-            let json = JSON.parse(loginData);
-            if (!json.uid) {
-                UI.showMessage("❌ 续期失败：账号或密码错误");
-                return false;
-            }
-
-            this.saveData("uid", json.uid);
-            this._loggedIn = true;
-            UI.showMessage("✅ 自动续期成功，正在重试...", true);
-
-            await new Promise(r => setTimeout(r, 800));
-
-            if (method === 'GET') {
-                return await this.get(originalUrl);
-            } else {
-                return await this.post(originalUrl, originalBody);
-            }
-        } catch (e) {
-            UI.showMessage(`❌ 续期异常：${e.message || e}`);
-            return false;
-        } finally {
-            this._renewing = false;
-        }
     }
 
     // ---------- 签到 ----------
     async dailyCheckIn(isTask = false) {
         if (this.dailyCheckInInProgress) return
         this.dailyCheckInInProgress = true
-        const throwError = (msg) => {
-            UI.showMessage(msg)
-            throw msg
-        }
         try {
             const lastCheckInDate = this.loadData("lastCheckInDate")
-            const today = new Date().toLocaleDateString('zh-CN')
+            const now = new Date()
+            const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
             if (lastCheckInDate && lastCheckInDate === today) {
                 if (isTask) return
-                throwError("今日已签到")
+                UI.showMessage("今日已签到")
+                throw new Error("今日已签到")
             }
-            if (!this._loggedIn) {
-                // 尝试用设置中的账号密码自动登录
-                const username = this.loadSetting('jm_account');
-                const password = this.loadSetting('jm_pwd');
-                if (username && password) {
-                    try {
-                        await this.account.login(username, password);
-                        this._loggedIn = true;
-                        UI.showMessage("✅ 自动登录成功");
-                    } catch (e) {
-                        if (isTask) return;
-                        throwError("自动登录失败，请检查账号密码或网络");
-                    }
-                } else {
-                    if (isTask) return;
-                    throwError("请先在设置中填写账号和密码");
-                }
+            if (!this.loadData("uid")) {
+                if (isTask) return
+                UI.showMessage("登录已过期，正在重新登录...")
+                throw new Error("Login expired")
             }
             const uid = this.loadData("uid")
-            if (!uid) {
-                throwError("无效用户ID，请重新登录")
-            }
             const checkRecordRes = await this.get(`${this.baseUrl}/daily?user_id=${uid}`)
             const checkRecord = JSON.parse(checkRecordRes)
             if (!('daily_id' in checkRecord)) {
-                throwError("无效的签到标识，签到失败")
+                UI.showMessage("签到失败：无法获取签到标识")
+                throw new Error("无效的签到标识，签到失败")
             }
             const daily_id = checkRecord.daily_id
             const checkResultRes = await this.post(`${this.baseUrl}/daily_chk`, `user_id=${uid}&daily_id=${daily_id}`)
             const checkResult = JSON.parse(checkResultRes)
             if (!checkResult.msg) {
-                throwError("无效的签到结果，签到失败")
+                UI.showMessage("签到失败：服务器返回异常")
+                throw new Error("无效的签到结果，签到失败")
             }
             UI.showMessage(checkResult.msg)
             this.saveData("lastCheckInDate", today)
@@ -828,17 +658,15 @@ class JM extends ComicSource {
             let json = JSON.parse(res);
             if (json.uid) {
                 this.saveData("uid", json.uid);
-                this._loggedIn = true;
                 return "ok";
             }
-            throw "登录失败，未返回 uid";
+            throw new Error("登录失败，未返回 uid");
         },
 
         logout: () => {
-            for (let url of JM.apiDomains) {
-                Network.deleteCookies(url)
+            for (let domain of JM.apiDomains) {
+                Network.deleteCookies(`https://${domain}`)
             }
-            this._loggedIn = false;
             this.saveData("uid", null);
         },
 
@@ -866,10 +694,16 @@ class JM extends ComicSource {
                         continue
                     }
                     let comics = e.content.map((e) => this.parseComic(e))
+                    let viewMore
+                    if (type === 'category_id') {
+                        viewMore = { page: "category", attributes: { category: title, param: id } }
+                    } else {
+                        viewMore = { page: "search", attributes: { text: title } }
+                    }
                     result.push({
                         title: e.title,
                         comics: comics,
-                        viewMore: `category:${title}@${id}`
+                        viewMore: viewMore
                     })
                 }
 
@@ -934,7 +768,7 @@ class JM extends ComicSource {
                 itemType: "search",
             },
             {
-                name: "特殊PLAY",
+                name: "其他标签",
                 type: "fixed",
                 categories: ['CG', '重口', '獵奇', '非H', '血腥暴力', '站長推薦'],
                 itemType: "search",
@@ -948,7 +782,8 @@ class JM extends ComicSource {
             if (category !== "每週必看") {
                 param ??= category
                 param = encodeURIComponent(param)
-                let res = await this.get(`${this.baseUrl}/categories/filter?o=${options[0]}&c=${param}&page=${page}`)
+                let sortOption = options[0] ?? "mr"
+                let res = await this.get(`${this.baseUrl}/categories/filter?o=${sortOption}&c=${param}&page=${page}`)
                 let data = JSON.parse(res)
                 let total = data.total
                 let maxPage = Math.ceil(total / 80)
@@ -958,7 +793,9 @@ class JM extends ComicSource {
                     maxPage: maxPage
                 }
             } else {
-                let res = await this.get(`${this.baseUrl}/week/filter?id=${options[0]}&type=${options[1]}&page=0`)
+                let weekId = options[0] ?? ""
+                let weekType = options[1] ?? "manga"
+                let res = await this.get(`${this.baseUrl}/week/filter?id=${weekId}&type=${weekType}&page=0`)
                 let data = JSON.parse(res)
                 let comics = data.list.map((e) => this.parseComic(e))
                 return {
@@ -1025,7 +862,8 @@ class JM extends ComicSource {
             keyword = keyword.trim()
             keyword = encodeURIComponent(keyword)
             keyword = keyword.replace(/%20/g, '+')
-            let url = `${this.baseUrl}/search?search_query=${keyword}&o=${options[0]}`
+            let sortOption = options[0] ?? "mr"
+            let url = `${this.baseUrl}/search?search_query=${keyword}&o=${sortOption}`
             if (page > 1) {
                 url += `&page=${page}`
             }
@@ -1055,6 +893,57 @@ class JM extends ComicSource {
                 label: "排序",
             }
         ],
+    }
+
+    // ---------- 网络收藏 ----------
+    favorites = {
+        multiFolder: true,
+        singleFolderForSingleComic: true,
+
+        addOrDelFavorite: async (comicId, folderId, isAdding) => {
+            if (isAdding) {
+                await this.post(`${this.baseUrl}/favorite`, `aid=${comicId}`)
+                await this.post(`${this.baseUrl}/favorite_folder`, `type=move&folder_id=${folderId}&aid=${comicId}`)
+            } else {
+                await this.post(`${this.baseUrl}/favorite`, `aid=${comicId}`)
+            }
+        },
+
+        loadFolders: async (comicId) => {
+            let res = await this.get(`${this.baseUrl}/favorite`)
+            let folders = {
+                "0": this.translate("All")
+            }
+            let json = JSON.parse(res)
+            for (let e of json.folder_list) {
+                folders[e.FID.toString()] = e.name
+            }
+            return {
+                folders: folders,
+                favorited: []
+            }
+        },
+
+        addFolder: async (name) => {
+            await this.post(`${this.baseUrl}/favorite_folder`, `type=add&folder_name=${encodeURIComponent(name)}`)
+        },
+
+        deleteFolder: async (folderId) => {
+            await this.post(`${this.baseUrl}/favorite_folder`, `type=del&folder_id=${folderId}`)
+        },
+
+        loadComics: async (page, folder) => {
+            let order = this.loadSetting('favoriteOrder')
+            let res = await this.get(`${this.baseUrl}/favorite?folder_id=${folder}&page=${page}&o=${order}`)
+            let json = JSON.parse(res)
+            let total = json.total
+            let maxPage = Math.ceil(total / 20)
+            let comics = json.list.map((e) => this.parseComic(e))
+            return {
+                comics: comics,
+                maxPage: maxPage
+            }
+        },
     }
 
     // ---------- 漫画详情 ----------
@@ -1093,37 +982,41 @@ class JM extends ComicSource {
             let author = data.author ?? []
             let works = data.works ?? []
             let actors = data.actors ?? []
-            let chapters = new Map()
             let series = (data.series ?? []).sort((a, b) => a.sort - b.sort)
+            let chapters = {}
             for (let e of series) {
                 let title = e.name ?? ''
                 title = title.trim()
                 if (title.length === 0) {
                     title = `第${e["sort"]}話`
                 }
-                let id = e.id.toString()
-                chapters.set(id, title)
+                chapters[`ep_${e.id}`] = title
             }
-            if (chapters.size === 0) {
-                chapters.set(id, '第1話')
+            if (Object.keys(chapters).length === 0) {
+                chapters[`ep_${id}`] = '第1話'
             }
             let tags = data.tags ?? []
-            let related = data["related_list"].map((e) => new Comic({
+            let related = (data["related_list"] ?? []).map((e) => new Comic({
                 id: e.id.toString(),
-                title: e.name,
+                title: e.name ?? "",
                 subtitle: e.author ?? "",
                 cover: this.getCoverUrl(e.id),
                 description: e.description ?? ""
             }))
-            let updateTimeStamp = data["addtime"];
-            let date = new Date(updateTimeStamp * 1000)
-            let updateDate = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+            let updateDate = "";
+            if (data["addtime"]) {
+                let date = new Date(data["addtime"] * 1000)
+                let yyyy = date.getFullYear();
+                let mm = String(date.getMonth() + 1).padStart(2, '0');
+                let dd = String(date.getDate()).padStart(2, '0');
+                updateDate = `${yyyy}-${mm}-${dd}`;
+            }
 
             return new ComicDetails({
-                title: data.name,
+                title: data.name ?? "",
                 cover: this.getCoverUrl(id),
-                description: data.description,
-                likesCount: Number(data.likes),
+                description: data.description ?? "",
+                likesCount: data.likes != null ? Number(data.likes) : 0,
                 chapters: chapters,
                 tags: {
                     "Author": author,
@@ -1138,14 +1031,16 @@ class JM extends ComicSource {
             })
         },
         loadEp: async (comicId, epId) => {
-            let res = await this.get(`${this.baseUrl}/chapter?id=${epId}`);
+            let realEpId = epId ? (epId.startsWith('ep_') ? epId.slice(3) : epId) : comicId;
+            let res = await this.get(`${this.baseUrl}/chapter?id=${realEpId}`);
             let data = JSON.parse(res)
-            let images = data.images.map((e) => this.getImageUrl(epId, e))
+            let images = (data.images ?? []).map((e) => this.getImageUrl(realEpId, e))
             return {
                 images: images
             }
         },
         onImageLoad: (url, comicId, epId) => {
+            epId = epId.startsWith('ep_') ? epId.slice(3) : epId;
             const scrambleId = 220980;
             let pictureName = "";
             for (let i = url.length - 1; i >= 0; i--) {
@@ -1234,7 +1129,7 @@ class JM extends ComicSource {
             let res = await this.post(`${this.baseUrl}/like`, `id=${id}`)
             let json = JSON.parse(res)
             if (json.code !== 200 || json.status === 'error') {
-                throw json.msg ?? '点赞/取消点赞失败'
+                throw new Error(json.msg ?? '点赞/取消点赞失败')
             }
             return "ok"
         },
@@ -1248,11 +1143,12 @@ class JM extends ComicSource {
             const pageSize = 6
             return {
                 comments: json.list.map((e) => new Comment({
-                    id: e.id?.toString(),
+                    id: e.CID?.toString(),
                     avatar: this.getAvatarUrl(e.photo),
                     userName: e.username,
                     time: e.addtime,
-                    content: e.content.substring(e.content.indexOf('>') + 1, e.content.lastIndexOf('<')),
+                    content: this._sanitizeHtml(e.content),
+                    isLiked: e.is_liked ?? false,
                     replyTo: replyTo || undefined,
                 })),
                 maxPage: Math.floor(json.total / pageSize) + 1
@@ -1266,7 +1162,7 @@ class JM extends ComicSource {
             let res = await this.post(`${this.baseUrl}/comment`, params)
             let json = JSON.parse(res)
             if (json.status === "fail") {
-                throw json.msg ?? 'Failed to send comment'
+                throw new Error(json.msg ?? 'Failed to send comment')
             }
             return "ok"
         },
@@ -1280,11 +1176,12 @@ class JM extends ComicSource {
             const pageSize = 6
             return {
                 comments: json.list.map((e) => new Comment({
-                    id: e.id?.toString(),
+                    id: e.CID?.toString(),
                     avatar: this.getAvatarUrl(e.photo),
                     userName: e.username,
                     time: e.addtime,
-                    content: e.content.substring(e.content.indexOf('>') + 1, e.content.lastIndexOf('<')),
+                    content: this._sanitizeHtml(e.content),
+                    isLiked: e.is_liked ?? false,
                     replyTo: replyTo || undefined,
                 })),
                 maxPage: Math.floor(json.total / pageSize) + 1
@@ -1298,17 +1195,14 @@ class JM extends ComicSource {
             let res = await this.post(`${this.baseUrl}/comment`, params)
             let json = JSON.parse(res)
             if (json.status === "fail") {
-                throw json.msg ?? 'Failed to send comment'
+                throw new Error(json.msg ?? 'Failed to send comment')
             }
             return "ok"
         },
         idMatch: "^(?:[Jj][Mm])?(\\d{5,})$|[:：]\\s*(\\d{5,})|[:：].*\\d+.*\\d+|^(?!.*[:：])(?=.*\\d.*\\d.*\\d.*\\d.*\\d)",
         enableTagsTranslate: true,
         onClickTag: (namespace, tag) => {
-            return {
-                action: 'search',
-                keyword: tag,
-            }
+            return { page: "search", attributes: { text: tag } }
         },
     }
 
@@ -1325,20 +1219,15 @@ class JM extends ComicSource {
             type: "switch",
             default: true,
         },
-        checkUpdateOnStart: {
-            title: "启动时检查更新",
-            type: "switch",
-            default: true,
-        },
         apiDomain: {
             title: "Api Domain",
             type: "select",
             options: [
-                { value: '1' },
-                { value: '2' },
-                { value: '3' },
-                { value: '4' },
-                { value: '5' },
+                { value: '1', text: '线路 1' },
+                { value: '2', text: '线路 2' },
+                { value: '3', text: '线路 3' },
+                { value: '4', text: '线路 4' },
+                { value: '5', text: '线路 5' },
             ],
             default: "1",
         },
@@ -1346,11 +1235,11 @@ class JM extends ComicSource {
             title: "Image Stream",
             type: "select",
             options: [
-                { value: '1' },
-                { value: '2' },
-                { value: '3' },
-                { value: '4' },
-                { value: '5' },
+                { value: '1', text: '线路 1' },
+                { value: '2', text: '线路 2' },
+                { value: '3', text: '线路 3' },
+                { value: '4', text: '线路 4' },
+                { value: '5', text: '线路 5' },
             ],
             default: "1",
         },
@@ -1377,21 +1266,19 @@ class JM extends ComicSource {
             buttonText: "签到",
             callback: () => this.dailyCheckIn()
         },
-        autoReLogin: {
-            title: "自动重登（保持登录）",
-            type: "switch",
-            default: true,
-        },
-        // 账号密码输入框（避免关键字屏蔽）
-        jm_account: {
-            title: "JM 账号(替换软件登录)",
-            type: "input",
-            default: ""
-        },
-        jm_pwd: {
-            title: "JM 密码(请退出下方的软件登录)",
-            type: "input",   // 如果框架不支持 password，可改为 input，但会明文显示
-            default: ""
+        favoriteOrder: {
+            title: "Favorite Order",
+            type: "select",
+            options: [
+                { value: "mr", text: "最新" },
+                { value: "mv", text: "总排行" },
+                { value: "mv_m", text: "月排行" },
+                { value: "mv_w", text: "周排行" },
+                { value: "mv_t", text: "日排行" },
+                { value: "mp", text: "最多图片" },
+                { value: "tf", text: "最多喜欢" },
+            ],
+            default: "mr",
         },
     }
 
@@ -1417,11 +1304,7 @@ class JM extends ComicSource {
             'Optimize Nodes': '节点优选',
             'Image Speed Test': '图片分流测速',
             'Start Test': '开始测速',
-            'autoReLogin': '自动重登（保持登录）',
-            'jm_account': 'JM 账号',
-            'jm_pwd': 'JM 密码',
-            'checkUpdateOnStart': '启动时检查更新',
-            '启动时检查更新': '启动时检查更新',
+            'Favorite Order': '收藏排序',
         },
         'zh_TW': {
             'Refresh Domain List': '刷新域名列表',
@@ -1443,11 +1326,7 @@ class JM extends ComicSource {
             'Optimize Nodes': '節點優選',
             'Image Speed Test': '圖片分流測速',
             'Start Test': '開始測速',
-            'autoReLogin': '自動重登（保持登錄）',
-            'jm_account': 'JM 帳號',
-            'jm_pwd': 'JM 密碼',
-            'checkUpdateOnStart': '啟動時檢查更新',
-            '启动时检查更新': '啟動時檢查更新',
-        },
+            'Favorite Order': '收藏排序',
+        }
     }
 }
