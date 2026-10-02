@@ -1,5 +1,16 @@
 # 更新说明
 
+### v1.9.1 (2026-10-02)
+
+**Bug 修复**
+- 评论加载/发送统一走 ID 归一化：从搜索建议或搜索框直接粘贴打开时，`comicId`/`epId` 收到的可能是整段搜索文本（含中文标题），现通过 `_normalizeComicId()` 清洗成纯数字再拼接口，修复搜索打开漫画后**评论看不了**的问题
+- `loadInfo` 返回的 `ComicDetails` 补上 `id` 字段，宿主改用清洗后的数字 id 而非原始搜索文本
+
+**重构**
+- 将 `loadInfo` 中分散的 ID 提取逻辑抽成公共方法 `_normalizeComicId()`，兼容 `JM` 前缀、中英文冒号、分散数字（≥5 位）、`ep_` 章节号前缀等格式，`loadInfo`/`loadComments`/`sendComment`/`loadChapterComments`/`sendChapterComment` 统一复用
+
+---
+
 ### v1.9.0 (2026-09-30)
 
 **架构重构**

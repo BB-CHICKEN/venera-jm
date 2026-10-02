@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂(重构)"
     key = "jm"
-    version = "1.9.0"
+    version = "1.9.1"
     minAppVersion = "1.16.0"
 
     static jmVersion = "2.0.16"
@@ -113,6 +113,41 @@ class JM extends ComicSource {
 
     getAvatarUrl(imageName) {
         return `${this.imageUrl}/media/users/${imageName}`
+    }
+
+    // 把用户输入的任意 id（含 JM 前缀、冒号、中文标题、章节号 ep_xxx 等）清洗成纯数字漫画 id
+    _normalizeComicId(input) {
+        if (input == null) return input
+        let id = String(input).trim()
+        if (/^[Jj][Mm]/.test(id)) {
+            id = id.substring(2)
+        }
+        let colonIdx = Math.max(id.indexOf(':'), id.indexOf('：'));
+        if (colonIdx !== -1) {
+            let afterColon = id.substring(colonIdx + 1);
+            let numbers = afterColon.match(/\d+/g);
+            if (numbers) {
+                let combined = numbers.join('');
+                if (combined.length >= 5) {
+                    return combined;
+                }
+            }
+        } else if (!/^\d+$/.test(id)) {
+            let numbers = id.match(/\d+/g);
+            if (numbers) {
+                let combined = numbers.join('');
+                if (combined.length >= 5) {
+                    return combined;
+                }
+            }
+        }
+        if (!/^\d+$/.test(id)) {
+            let idMatch = id.match(/(\d{5,})/);
+            if (idMatch) {
+                return idMatch[1];
+            }
+        }
+        return id;
     }
 
     _sanitizeHtml(html) {
@@ -232,7 +267,8 @@ class JM extends ComicSource {
 
     async refreshImgUrl(showMessage) {
         let option = parseInt(this.loadSetting('imageStream')) || 1
-        let mapping = await this._buildShuntMapping()
+        const force = !!showMessage
+        let mapping = await this._buildShuntMapping(force)
         let actualIndex = mapping[Math.min(option - 1, mapping.length - 1)]
 
         let res = await this.get(
@@ -253,8 +289,21 @@ class JM extends ComicSource {
      * @returns {Promise<number[]>} 如 [1, 2, 3, 4, 6, 9]
      */
     async _buildShuntMapping(forceRefresh = false) {
+        const SHUNT_TTL = 12 * 60 * 60 * 1000
         if (!forceRefresh && this._shuntMapping && this._shuntMapping.length > 0) {
             return this._shuntMapping
+        }
+        // 尝试读取持久化缓存，避免每次启动重复并发拉取全部分流
+        if (!forceRefresh) {
+            let cached = this.loadData('shuntCache')
+            if (cached && typeof cached === 'object') {
+                let ttlOk = (cached.ts && (Date.now() - cached.ts) < SHUNT_TTL) || !cached.ts
+                if (ttlOk && Array.isArray(cached.mapping) && cached.mapping.length > 0) {
+                    this._shuntMapping = cached.mapping
+                    this._shuntResults = Array.isArray(cached.results) ? cached.results : null
+                    return this._shuntMapping
+                }
+            }
         }
         const MAX_SHUNTS = 10
         const seenUrls = new Map()
@@ -277,6 +326,11 @@ class JM extends ComicSource {
 
         this._shuntMapping = uniqueIndices
         this._shuntResults = results
+        this.saveData('shuntCache', {
+            ts: Date.now(),
+            mapping: uniqueIndices,
+            results: results
+        })
         return uniqueIndices
     }
 
@@ -949,34 +1003,7 @@ class JM extends ComicSource {
     // ---------- 漫画详情 ----------
     comic = {
         loadInfo: async (id) => {
-            if (id.startsWith('jm') || id.startsWith('JM')) {
-                id = id.substring(2)
-            }
-            let colonIdx = Math.max(id.indexOf(':'), id.indexOf('：'));
-            if (colonIdx !== -1) {
-                let afterColon = id.substring(colonIdx + 1);
-                let numbers = afterColon.match(/\d+/g);
-                if (numbers) {
-                    let combined = numbers.join('');
-                    if (combined.length >= 5) {
-                        id = combined;
-                    }
-                }
-            } else if (!/^\d+$/.test(id)) {
-                let numbers = id.match(/\d+/g);
-                if (numbers) {
-                    let combined = numbers.join('');
-                    if (combined.length >= 5) {
-                        id = combined;
-                    }
-                }
-            }
-            if (!/^\d+$/.test(id)) {
-                let idMatch = id.match(/(\d{5,})/);
-                if (idMatch) {
-                    id = idMatch[1];
-                }
-            }
+            id = this._normalizeComicId(id)
             let res = await this.get(`${this.baseUrl}/album?id=${id}`);
             let data = JSON.parse(res)
             let author = data.author ?? []
@@ -1013,6 +1040,7 @@ class JM extends ComicSource {
             }
 
             return new ComicDetails({
+                id: id,
                 title: data.name ?? "",
                 cover: this.getCoverUrl(id),
                 description: data.description ?? "",
@@ -1134,6 +1162,7 @@ class JM extends ComicSource {
             return "ok"
         },
         loadComments: async (comicId, subId, page, replyTo) => {
+            comicId = this._normalizeComicId(comicId)
             let url = `${this.baseUrl}/forum?mode=manhua&aid=${comicId}&page=${page}`
             if (replyTo) {
                 url += `&comment_id=${replyTo}`
@@ -1155,6 +1184,7 @@ class JM extends ComicSource {
             }
         },
         sendComment: async (comicId, subId, content, replyTo) => {
+            comicId = this._normalizeComicId(comicId)
             let params = `video_id=${comicId}&comment=${encodeURIComponent(content)}&status=true`
             if (replyTo) {
                 params += `&comment_id=${replyTo}&is_reply=1&forum_subject=1`
@@ -1167,6 +1197,7 @@ class JM extends ComicSource {
             return "ok"
         },
         loadChapterComments: async (comicId, epId, page, replyTo) => {
+            epId = this._normalizeComicId(epId)
             let url = `${this.baseUrl}/forum?mode=manhua&aid=${epId}&page=${page}`
             if (replyTo) {
                 url += `&comment_id=${replyTo}`
@@ -1188,6 +1219,7 @@ class JM extends ComicSource {
             }
         },
         sendChapterComment: async (comicId, epId, content, replyTo) => {
+            epId = this._normalizeComicId(epId)
             let params = `video_id=${epId}&comment=${encodeURIComponent(content)}&status=true`
             if (replyTo) {
                 params += `&comment_id=${replyTo}&is_reply=1&forum_subject=1`
@@ -1199,7 +1231,7 @@ class JM extends ComicSource {
             }
             return "ok"
         },
-        idMatch: "^(?:[Jj][Mm])?(\\d{5,})$|[:：]\\s*(\\d{5,})|[:：].*\\d+.*\\d+|^(?!.*[:：])(?=.*\\d.*\\d.*\\d.*\\d.*\\d)",
+        idMatch: "^(?:[Jj][Mm])?\\d{5,}$|[:：](?=(?:[^0-9]*\\d){5})[\\s\\S]{0,60}$|^(?!.*[:：])(?=[^0-9]*\\d)[\\u4e00-\\u9fa5\\d]{3,30}$",
         enableTagsTranslate: true,
         onClickTag: (namespace, tag) => {
             return { page: "search", attributes: { text: tag } }
