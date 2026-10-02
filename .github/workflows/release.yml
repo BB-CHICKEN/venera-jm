@@ -2,18 +2,11 @@ name: 自动发布
 
 on:
   push:
-    tags:
-      - 'v*'
     branches:
       - main
     paths:
       - 'index.json'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: '指定标签（如 v1.8.4），留空则使用最新 tag'
-        required: false
-        type: string
 
 permissions:
   contents: write
@@ -23,25 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: 确定标签
-        id: tag
-        run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            version=$(node -e "console.log('v' + require('./index.json')[0].version)")
-            echo "tag=$version" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 检出对应标签
-        if: github.event_name != 'push' || github.ref_type == 'tag'
-        run: |
-          git checkout ${{ steps.tag.outputs.tag }}
 
       - name: 获取版本号
         id: version
@@ -59,24 +33,13 @@ jobs:
           fs.writeFileSync('release_body.md', body);
           "
 
-      - name: 创建或更新 Tag
-        if: github.event_name == 'push' && github.ref_type != 'tag'
-        run: |
-          tag="v${{ steps.version.outputs.version }}"
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            git tag -d "$tag"
-            git push origin ":refs/tags/$tag" || true
-          fi
-          git tag "$tag"
-          git push origin "$tag"
-
-      - name: 上传 recode-jm.js 到 Release
-        if: github.event_name != 'push' || github.ref_type == 'tag'
+      - name: 发布 Release（推送即自动创建/更新对应版本）
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
+          tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
           body_path: release_body.md
           files: recode-jm.js
+          replace_assets: true
           draft: false
           prerelease: false
