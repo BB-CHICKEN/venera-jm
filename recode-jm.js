@@ -1,7 +1,7 @@
 class JM extends ComicSource {
-    name = "禁漫天堂(重构)"
+    name = "禁漫天堂"
     key = "jm"
-    version = "1.9.1"
+    version = "1.9.2"
     minAppVersion = "1.16.0"
 
     static jmVersion = "2.0.16"
@@ -568,7 +568,8 @@ class JM extends ComicSource {
     }
     // ---------- 数据转换 ----------
     parseComic(comic) {
-        let id = comic.id.toString()
+        let id = this._normalizeComicId(comic.id)
+        if (id == null) id = comic.id.toString()
         let author = comic.author ?? ""
         let title = comic.name ?? ""
         let description = comic.description ?? ""
@@ -955,11 +956,16 @@ class JM extends ComicSource {
         singleFolderForSingleComic: true,
 
         addOrDelFavorite: async (comicId, folderId, isAdding) => {
+            const cid = this._normalizeComicId(comicId)
+            if (cid == null || !/^\d{5,}$/.test(cid)) {
+                console.log(`忽略无效漫画ID: ${comicId}`)
+                return
+            }
             if (isAdding) {
-                await this.post(`${this.baseUrl}/favorite`, `aid=${comicId}`)
-                await this.post(`${this.baseUrl}/favorite_folder`, `type=move&folder_id=${folderId}&aid=${comicId}`)
+                await this.post(`${this.baseUrl}/favorite`, `aid=${cid}`)
+                await this.post(`${this.baseUrl}/favorite_folder`, `type=move&folder_id=${folderId}&aid=${cid}`)
             } else {
-                await this.post(`${this.baseUrl}/favorite`, `aid=${comicId}`)
+                await this.post(`${this.baseUrl}/favorite`, `aid=${cid}`)
             }
         },
 
@@ -972,9 +978,18 @@ class JM extends ComicSource {
             for (let e of json.folder_list) {
                 folders[e.FID.toString()] = e.name
             }
+            // 根据 comicId 判断该漫画当前收藏在哪些收藏夹
+            let favorited = []
+            if (comicId) {
+                let folderIds = ["0"]
+                for (let e of json.folder_list) {
+                    folderIds.push(e.FID.toString())
+                }
+                favorited = await this._findComicFavoriteFolders(comicId, folderIds)
+            }
             return {
                 folders: folders,
-                favorited: []
+                favorited: favorited
             }
         },
 
@@ -990,14 +1005,51 @@ class JM extends ComicSource {
             let order = this.loadSetting('favoriteOrder')
             let res = await this.get(`${this.baseUrl}/favorite?folder_id=${folder}&page=${page}&o=${order}`)
             let json = JSON.parse(res)
-            let total = json.total
-            let maxPage = Math.ceil(total / 20)
+            let total = Number(json.total ?? json.count ?? 0) || 0
+            let perPage = 20
+            let maxPage = Math.max(1, Math.ceil(total / perPage))
             let comics = json.list.map((e) => this.parseComic(e))
             return {
                 comics: comics,
                 maxPage: maxPage
             }
         },
+    }
+
+    // 在给定收藏夹列表里查找某漫画命中的收藏夹，用于回填 favorited
+    async _findComicFavoriteFolders(comicId, folderIds) {
+        if (!comicId) return []
+        let target = this._normalizeComicId(comicId)
+        if (!/^\d{5,}$/.test(target)) return []
+        let found = []
+        // 并行检查各文件夹，任一命中即记录
+        let results = await Promise.all(folderIds.map(async (folderId) => {
+            try {
+                let order = this.loadSetting('favoriteOrder')
+                let page = 1
+                while (true) {
+                    let res = await this.get(`${this.baseUrl}/favorite?folder_id=${folderId}&page=${page}&o=${order}`)
+                    let json = JSON.parse(res)
+                    if (json.list && json.list.some((e) => String(e.id) === target)) {
+                        return folderId
+                    }
+                    let maxPage = Math.ceil((json.total || 0) / 20)
+                    if (page >= maxPage || !json.list || json.list.length === 0) {
+                        return null
+                    }
+                    page++
+                }
+            } catch (e) {
+                console.log(`查询收藏夹 ${folderId} 失败:`, e)
+                return null
+            }
+        }))
+        for (let r of results) {
+            if (r != null && !found.includes(r)) {
+                found.push(r)
+            }
+        }
+        return found
     }
 
     // ---------- 漫画详情 ----------
@@ -1054,6 +1106,7 @@ class JM extends ComicSource {
                     "View": data.total_views ? [data.total_views] : [],
                 },
                 recommend: related,
+                isFavorite: data.is_favorite ?? false,
                 isLiked: data.liked ?? false,
                 updateTime: updateDate,
             })

@@ -1,5 +1,20 @@
 # 更新说明
 
+### v1.9.2 (2026-10-10)
+
+**Bug 修复**
+- 修复旧版收藏数据 id 未去混淆导致的 aid 错误（接口返回 400「漫畫ID錯誤.」，收藏未写入）：`addOrDelFavorite` 发送前统一走 `_normalizeComicId()` 校验，非纯数字 id 直接忽略并打印日志，避免脏数据进入接口（关闭 #4）
+- `parseComic` 读取列表时对 `comic.id` 做归一化，避免脏 id 进入详情与收藏逻辑
+- `_findComicFavoriteFolders` 匹配收藏夹前先规范化 `target`，非数字 id 直接返回空，省去多余查询
+
+**变更**
+- 显示名由「禁漫天堂(重构)」改为「禁漫天堂」，去除「重构」字样（README、源脚本、index.json 内 `name` 保持一致）
+
+**文档**
+- v1.9.2 提交统一升级 `recode-jm.js` / `index.json` / `version.json` / `README.md` 版本号至 `1.9.2`
+
+---
+
 ### v1.9.1 (2026-10-02)
 
 **Bug 修复**

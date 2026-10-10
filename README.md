@@ -1,4 +1,4 @@
-# 禁漫天堂(重构) — [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 漫画源插件
+# 禁漫天堂 — [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 漫画源插件
 
 基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) App 的禁漫天堂 (JMComic) 漫画源，支持浏览、搜索、收藏、签到、节点延迟测试、图片分流测速等功能。
 
@@ -6,19 +6,13 @@
 
 > 开发方向：由于 Venera 原版已停更，后续开发基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 进行适配与维护。
 
-## 闲谈
-
-### 为何要重构这个插件？
-- 原插件经常弹出登录过期，现已改用框架原生登录彻底解决
-- 增添一些我认为需要的功能（测速、收藏、签到等）
-
 ## 基本信息
 
 | 项目 | 值 |
 |------|-----|
-| 名称 | 禁漫天堂(重构) |
+| 名称 | 禁漫天堂 |
 | 标识 | `jm` |
-| 版本 | `1.9.1` |
+| 版本 | `1.9.2` |
 | 最低 App 版本 | `1.16.0` |
 
 ## 订阅链接
