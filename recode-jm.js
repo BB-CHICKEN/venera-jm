@@ -1,7 +1,7 @@
 class JM extends ComicSource {
     name = "禁漫天堂"
     key = "jm"
-    version = "1.9.2"
+    version = "1.9.3"
     minAppVersion = "1.16.0"
 
     static jmVersion = "2.0.16"
@@ -10,6 +10,9 @@ class JM extends ComicSource {
 
     dailyCheckInInProgress = false
     _shuntMapping = null
+    _userActive = false
+    _reloginLock = false
+    _folderCache = null
 
     static fallbackServers = [
         "www.cdnhjk.net",
@@ -161,16 +164,21 @@ class JM extends ComicSource {
     // ---------- 初始化 ----------
     async init() {
         this._backgroundReady = false;
-        setTimeout(() => this._initBackground(), 0);
+        this._userActive = false;
+        setTimeout(() => this._initBackground(), 10000);
     }
 
     async _initBackground() {
         if (this._backgroundReady) return;
         try {
+            if (this._userActive) return;
             if (this.loadSetting('refreshDomainsOnStart')) await this.refreshApiDomains(false);
+            if (this._userActive) return;
             await this.refreshImgUrl(false);
+            if (this._userActive) return;
             await this._autoLogin();
             if (this.loadSetting("dailyCheckInTask")) {
+                if (this._userActive) return;
                 this.dailyCheckIn(true).catch(() => {});
             }
             this._backgroundReady = true;
@@ -197,6 +205,7 @@ class JM extends ComicSource {
         try {
             let time = Math.floor(Date.now() / 1000);
             let res = await Network.get(`${this.baseUrl}/favorite?page=1`, this.getApiHeaders(time));
+            if (res.status === 401) return false
             if (res.status >= 500) {
                 console.log("服务器临时不可用 (" + res.status + ")，跳过登录验证");
                 return true;
@@ -267,9 +276,22 @@ class JM extends ComicSource {
 
     async refreshImgUrl(showMessage) {
         let option = parseInt(this.loadSetting('imageStream')) || 1
-        const force = !!showMessage
-        let mapping = await this._buildShuntMapping(force)
-        let actualIndex = mapping[Math.min(option - 1, mapping.length - 1)]
+
+        if (!showMessage) {
+            let cached = this.loadData('imgUrlCache')
+            if (cached && cached.ts && (Date.now() - cached.ts) < 6 * 60 * 60 * 1000 && cached.url) {
+                this.overwriteImgUrl(cached.url)
+                return
+            }
+        }
+
+        let actualIndex
+        if (showMessage) {
+            let mapping = await this._buildShuntMapping(true)
+            actualIndex = mapping[Math.min(option - 1, mapping.length - 1)]
+        } else {
+            actualIndex = Math.min(option, 10)
+        }
 
         let res = await this.get(
             `${this.baseUrl}/setting?app_img_shunt=${actualIndex}&express=`
@@ -280,6 +302,10 @@ class JM extends ComicSource {
                 UI.showMessage(`图片分流 ${option} → 实际线路${actualIndex}:\n${setting["img_host"]}`)
             }
             this.overwriteImgUrl(setting["img_host"])
+            this.saveData('imgUrlCache', {
+                ts: Date.now(),
+                url: setting["img_host"]
+            })
         }
     }
 
@@ -293,7 +319,6 @@ class JM extends ComicSource {
         if (!forceRefresh && this._shuntMapping && this._shuntMapping.length > 0) {
             return this._shuntMapping
         }
-        // 尝试读取持久化缓存，避免每次启动重复并发拉取全部分流
         if (!forceRefresh) {
             let cached = this.loadData('shuntCache')
             if (cached && typeof cached === 'object') {
@@ -309,19 +334,17 @@ class JM extends ComicSource {
         const seenUrls = new Map()
         const uniqueIndices = []
 
-        const tasks = []
+        const results = []
+        const overallDeadline = Date.now() + 30000
         for (let i = 1; i <= MAX_SHUNTS; i++) {
-            tasks.push(
-                this._fetchCdnUrl(i).catch(() => ({ index: i, url: null }))
-            )
-        }
-        const results = await Promise.all(tasks)
-
-        for (const r of results) {
+            if (Date.now() >= overallDeadline) break
+            const r = await this._fetchCdnUrlWithTimeout(i, 3000)
+            results.push(r)
             if (r.url && !seenUrls.has(r.url)) {
                 seenUrls.set(r.url, r.index)
                 uniqueIndices.push(r.index)
             }
+            await new Promise(r => setTimeout(r, 100))
         }
 
         this._shuntMapping = uniqueIndices
@@ -509,6 +532,20 @@ class JM extends ComicSource {
         }
     }
 
+    async _fetchCdnUrlWithTimeout(index, timeoutMs = 3000) {
+        try {
+            const fetchPromise = this.get(`${this.baseUrl}/setting?app_img_shunt=${index}&express=`)
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('timeout')), timeoutMs)
+            )
+            const res = await Promise.race([fetchPromise, timeoutPromise])
+            const setting = JSON.parse(res)
+            return { index, url: setting["img_host"] || null }
+        } catch (e) {
+            return { index, url: null }
+        }
+    }
+
     /**
      * 对单个 CDN 域名进行测速：并行下载多张小图，计算总大小与耗时
      * @param {string} cdnUrl - CDN 域名（如 "https://cdn-xxx.net"）
@@ -596,45 +633,79 @@ class JM extends ComicSource {
         let data = Convert.decodeBase64(input)
         let decrypted = Convert.decryptAesEcb(data, key)
         let res = Convert.decodeUtf8(decrypted)
-        let start = 0
-        while (start < res.length && res[start] !== '{' && res[start] !== '[') {
-            start++
-        }
-        let end = res.length - 1
-        while (end > start && res[end] !== '}' && res[end] !== ']') {
-            end--
+
+        let start = res.indexOf('{')
+        let arrayStart = res.indexOf('[')
+        if (arrayStart !== -1 && (start === -1 || arrayStart < start)) start = arrayStart
+
+        let end = res.lastIndexOf('}')
+        let arrayEnd = res.lastIndexOf(']')
+        if (arrayEnd !== -1 && (end === -1 || arrayEnd > end)) end = arrayEnd
+
+        if (start === -1 || end === -1 || start >= end) {
+            throw new Error("解密失败：服务器返回了非预期的数据格式")
         }
         return res.substring(start, end + 1)
     }
 
+    // 生成不带调用堆栈的错误，避免日志里出现 at loadInfo / at get 等路径
+    _cleanError(message) {
+        let e = new Error(message)
+        e.stack = message
+        return e
+    }
+
     // ---------- 核心请求方法 ----------
-    async get(url) {
+    async get(url, _isRetry = false, _invalidMsg = '无效数据') {
         let time = Math.floor(Date.now() / 1000)
         let kJmSecret = "185Hcomic3PAPP7R"
         let res = await Network.get(url, this.getApiHeaders(time))
         if (res.status !== 200) {
             if (res.status === 401) {
-                let json = JSON.parse(res.body);
-                let message = json.errorMsg;
-                if (message === "請先登入會員") {
-                    throw new Error("Login expired");
+                let errorMsg
+                try {
+                    let json = JSON.parse(res.body)
+                    errorMsg = json.errorMsg
+                } catch (e) {
+                    errorMsg = null
                 }
-                throw new Error(message ?? `HTTP ${res.status}`);
+                if (errorMsg === "請先登入會員") {
+                    if (_isRetry) {
+                        throw new Error("登录已过期，请重新登录")
+                    }
+                    if (!this._reloginLock) {
+                        this._reloginLock = true
+                        throw new Error("登录已过期")
+                    }
+                    for (let i = 0; i < 60; i++) {
+                        if (!this._reloginLock) break
+                        await new Promise(r => setTimeout(r, 200))
+                    }
+                    this._reloginLock = false
+                    return await this.get(url, true, _invalidMsg)
+                }
+                throw new Error(errorMsg ?? `HTTP ${res.status}`)
             }
             if (res.status >= 500) {
-                throw new Error(`服务器临时不可用 (${res.status})，请稍后重试`);
+                throw new Error(`服务器临时不可用 (${res.status})，请稍后重试`)
             }
-            throw new Error(`HTTP ${res.status}`);
+            throw new Error(`HTTP ${res.status}`)
         }
-        let json = JSON.parse(res.body)
+        this._reloginLock = false
+        let json
+        try {
+            json = JSON.parse(res.body)
+        } catch (e) {
+            throw this._cleanError(`解析服务器响应失败: HTTP ${res.status}`)
+        }
         let data = json.data
         if (typeof data !== 'string') {
-            throw new Error('无效数据')
+            throw this._cleanError(_invalidMsg)
         }
         return this.convertData(data, `${time}${kJmSecret}`)
     }
 
-    async post(url, body) {
+    async post(url, body, _isRetry = false) {
         let time = Math.floor(Date.now() / 1000)
         let kJmSecret = "185Hcomic3PAPP7R"
         let res = await Network.post(url, {
@@ -643,18 +714,36 @@ class JM extends ComicSource {
         }, body)
         if (res.status !== 200) {
             if (res.status === 401) {
-                let json = JSON.parse(res.body);
-                let message = json.errorMsg;
-                if (message === "請先登入會員") {
-                    throw new Error("Login expired");
+                let errorMsg
+                try {
+                    let json = JSON.parse(res.body)
+                    errorMsg = json.errorMsg
+                } catch (e) {
+                    errorMsg = null
                 }
-                throw new Error(message ?? `HTTP ${res.status}`);
+                if (errorMsg === "請先登入會員") {
+                    if (_isRetry) {
+                        throw new Error("登录已过期，请重新登录")
+                    }
+                    if (!this._reloginLock) {
+                        this._reloginLock = true
+                        throw new Error("登录已过期")
+                    }
+                    for (let i = 0; i < 60; i++) {
+                        if (!this._reloginLock) break
+                        await new Promise(r => setTimeout(r, 200))
+                    }
+                    this._reloginLock = false
+                    return await this.post(url, body, true)
+                }
+                throw new Error(errorMsg ?? `HTTP ${res.status}`)
             }
             if (res.status >= 500) {
-                throw new Error(`服务器临时不可用 (${res.status})，请稍后重试`);
+                throw new Error(`服务器临时不可用 (${res.status})，请稍后重试`)
             }
-            throw new Error(`HTTP ${res.status}`);
+            throw new Error(`HTTP ${res.status}`)
         }
+        this._reloginLock = false
         let json = JSON.parse(res.body)
         let data = json.data
         if (typeof data !== 'string') {
@@ -672,31 +761,32 @@ class JM extends ComicSource {
             const now = new Date()
             const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
             if (lastCheckInDate && lastCheckInDate === today) {
-                if (isTask) return
-                UI.showMessage("今日已签到")
-                throw new Error("今日已签到")
+                if (!isTask) UI.showMessage("今日已签到")
+                return
             }
             if (!this.loadData("uid")) {
                 if (isTask) return
                 UI.showMessage("登录已过期，正在重新登录...")
-                throw new Error("Login expired")
+                return
             }
             const uid = this.loadData("uid")
             const checkRecordRes = await this.get(`${this.baseUrl}/daily?user_id=${uid}`)
             const checkRecord = JSON.parse(checkRecordRes)
             if (!('daily_id' in checkRecord)) {
                 UI.showMessage("签到失败：无法获取签到标识")
-                throw new Error("无效的签到标识，签到失败")
+                return
             }
             const daily_id = checkRecord.daily_id
             const checkResultRes = await this.post(`${this.baseUrl}/daily_chk`, `user_id=${uid}&daily_id=${daily_id}`)
             const checkResult = JSON.parse(checkResultRes)
             if (!checkResult.msg) {
                 UI.showMessage("签到失败：服务器返回异常")
-                throw new Error("无效的签到结果，签到失败")
+                return
             }
             UI.showMessage(checkResult.msg)
             this.saveData("lastCheckInDate", today)
+        } catch (e) {
+            if (!isTask) UI.showMessage("签到失败: " + (e.message || "未知错误"))
         } finally {
             this.dailyCheckInInProgress = false
         }
@@ -772,9 +862,9 @@ class JM extends ComicSource {
         title: "禁漫天堂",
         parts: [
             {
-                name: "每週必看",
+                name: "每周必看",
                 type: "fixed",
-                categories: ["每週必看"],
+                categories: ["每周必看"],
                 itemType: "category",
             },
             {
@@ -809,7 +899,7 @@ class JM extends ComicSource {
                 type: "fixed",
                 categories: [
                     '御姐', '熟女', '巨乳', '貧乳', '女性支配', '教師', '女僕', '護士',
-                    '泳裝', '眼鏡', '連褲襪', '其他制服', '兔女郎'
+                    '泳裝', '眼鏡', '连裤袜', '其他制服', '兔女郎'
                 ],
                 itemType: "search",
             },
@@ -871,7 +961,7 @@ class JM extends ComicSource {
                             "mv_w-周排行",
                             "mv_t-日排行",
                             "mp-最多圖片",
-                            "tf-最多喜歡",
+                            "tf-最多喜欢",
                         ],
                     }
                 ]
@@ -906,7 +996,7 @@ class JM extends ComicSource {
                 "mv_t-日排行",
             ],
             load: async (option, page) => {
-                return this.categoryComics.load("總排行", "0", [option], page)
+                return this.categoryComics.load("总排行", "0", [option], page)
             }
         }
     }
@@ -943,7 +1033,7 @@ class JM extends ComicSource {
                     "mv_w-周排行",
                     "mv_t-日排行",
                     "mp-最多圖片",
-                    "tf-最多喜歡",
+                    "tf-最多喜欢",
                 ],
                 label: "排序",
             }
@@ -970,25 +1060,73 @@ class JM extends ComicSource {
         },
 
         loadFolders: async (comicId) => {
-            let res = await this.get(`${this.baseUrl}/favorite`)
-            let folders = {
-                "0": this.translate("All")
+            const FOLDER_CACHE_TTL = 5 * 60 * 1000
+            let cachedFolders = null
+            let cachedFavoriteMap = {}
+
+            if (this._folderCache && this._folderCache.ts && (Date.now() - this._folderCache.ts) < FOLDER_CACHE_TTL) {
+                cachedFolders = this._folderCache.folders
+                cachedFavoriteMap = this._folderCache.favoriteMap || {}
             }
-            let json = JSON.parse(res)
-            for (let e of json.folder_list) {
-                folders[e.FID.toString()] = e.name
+
+            let folders = cachedFolders
+            let favoriteMap = cachedFavoriteMap
+
+            let fetchPromise = null
+            if (!folders) {
+                fetchPromise = (async () => {
+                    try {
+                        let res = await this.get(`${this.baseUrl}/favorite`)
+                        let json = JSON.parse(res)
+                        let f = { "0": this.translate("All") }
+                        for (let e of json.folder_list) {
+                            f[e.FID.toString()] = e.name
+                        }
+                        return { folders: f, folderList: json.folder_list }
+                    } catch (e) {
+                        console.log("加载收藏夹失败:", e)
+                        return null
+                    }
+                })()
             }
-            // 根据 comicId 判断该漫画当前收藏在哪些收藏夹
+
             let favorited = []
-            if (comicId) {
-                let folderIds = ["0"]
-                for (let e of json.folder_list) {
-                    folderIds.push(e.FID.toString())
+            if (comicId && folders) {
+                if (cachedFavoriteMap[comicId] !== undefined) {
+                    favorited = cachedFavoriteMap[comicId]
                 }
-                favorited = await this._findComicFavoriteFolders(comicId, folderIds)
             }
+
+            if (fetchPromise) {
+                let result = await fetchPromise
+                if (result) {
+                    folders = result.folders
+                    this._folderCache = {
+                        ts: Date.now(),
+                        folders: folders,
+                        favoriteMap: cachedFavoriteMap
+                    }
+                    if (comicId) {
+                        let folderIds = ["0"]
+                        for (let e of result.folderList) {
+                            folderIds.push(e.FID.toString())
+                        }
+                        try {
+                            favorited = await this._findComicFavoriteFolders(comicId, folderIds)
+                        } catch (e) {
+                            console.log("查询漫画收藏状态失败:", e)
+                            favorited = []
+                        }
+                        this._folderCache.favoriteMap[comicId] = favorited
+                    }
+                } else if (!folders) {
+                    folders = { "0": this.translate("All") }
+                    favorited = []
+                }
+            }
+
             return {
-                folders: folders,
+                folders: folders || { "0": this.translate("All") },
                 favorited: favorited
             }
         },
@@ -1055,9 +1193,27 @@ class JM extends ComicSource {
     // ---------- 漫画详情 ----------
     comic = {
         loadInfo: async (id) => {
+            this._userActive = true;
             id = this._normalizeComicId(id)
-            let res = await this.get(`${this.baseUrl}/album?id=${id}`);
-            let data = JSON.parse(res)
+            let res
+            try {
+                res = await this.get(`${this.baseUrl}/album?id=${id}`)
+            } catch (e) {
+                if (e.message === '无效数据') {
+                    throw this._cleanError("不存在的漫画码")
+                }
+                if (e.message === '解密失败：服务器返回了非预期的数据格式') {
+                    throw this._cleanError("获取漫画详情失败，该漫画可能被服务器限制或下架")
+                }
+                throw e
+            }
+            let data
+            try {
+                data = JSON.parse(res)
+            } catch (e) {
+                console.log(`[JM] 漫画 ${id} 详情解析失败，原始文本:`, String(res).substring(0, 100))
+                throw this._cleanError("获取漫画详情失败，该漫画可能被服务器限制或下架")
+            }
             let author = data.author ?? []
             let works = data.works ?? []
             let actors = data.actors ?? []
@@ -1067,12 +1223,12 @@ class JM extends ComicSource {
                 let title = e.name ?? ''
                 title = title.trim()
                 if (title.length === 0) {
-                    title = `第${e["sort"]}話`
+                    title = `第${e["sort"]}话`
                 }
                 chapters[`ep_${e.id}`] = title
             }
             if (Object.keys(chapters).length === 0) {
-                chapters[`ep_${id}`] = '第1話'
+                chapters[`ep_${id}`] = '第1话'
             }
             let tags = data.tags ?? []
             let related = (data["related_list"] ?? []).map((e) => new Comic({
@@ -1245,7 +1401,7 @@ class JM extends ComicSource {
             let res = await this.post(`${this.baseUrl}/comment`, params)
             let json = JSON.parse(res)
             if (json.status === "fail") {
-                throw new Error(json.msg ?? 'Failed to send comment')
+                throw new Error(json.msg ?? '评论失败')
             }
             return "ok"
         },
@@ -1280,7 +1436,7 @@ class JM extends ComicSource {
             let res = await this.post(`${this.baseUrl}/comment`, params)
             let json = JSON.parse(res)
             if (json.status === "fail") {
-                throw new Error(json.msg ?? 'Failed to send comment')
+                throw new Error(json.msg ?? '无法发送评论')
             }
             return "ok"
         },
@@ -1349,7 +1505,7 @@ class JM extends ComicSource {
             title: "手动签到",
             type: "callback",
             buttonText: "签到",
-            callback: () => this.dailyCheckIn()
+            callback: () => this.dailyCheckIn().catch(() => {})
         },
         favoriteOrder: {
             title: "Favorite Order",
@@ -1408,7 +1564,7 @@ class JM extends ComicSource {
             'Work': '作品',
             'Actor': '角色',
             'View': '瀏覽量',
-            'Optimize Nodes': '節點優選',
+            'Optimize Nodes': '节点优选',
             'Image Speed Test': '圖片分流測速',
             'Start Test': '開始測速',
             'Favorite Order': '收藏排序',

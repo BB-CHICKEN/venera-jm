@@ -1,5 +1,28 @@
 # 更新说明
 
+### v1.9.3 (2026-11-08)
+
+**性能优化**
+- 后台初始化延迟至 10 秒，新增 `_userActive` 标记：用户打开详情页时自动跳过后台网络任务，解决 /album 被后台 /setting 请求排队阻塞 8+ 秒的问题
+- `refreshImgUrl` 启动时不再调用 `_buildShuntMapping` 并发 10 个 /setting；改为直接请求单线路并加 6 小时 TTL 缓存（键 `imgUrlCache`），仅一次 /setting 即可
+- `_buildShuntMapping` 从 `Promise.all` 10 并发改为串行，单请求 3s 超时，整体 30s 硬上限，中间 yield 100ms 让出事件循环
+- `favorites.loadFolders` 增加 5 分钟 TTL 缓存（`_folderCache`），详情页收藏夹状态不再每次同步阻塞
+
+**稳定性**
+- 统一 401 处理：`_reloginLock` 确保同一时间只有一个重登流程，其他并发请求等待后统一重试一次，避免多个请求各自重登叠加 10+ 秒
+- `convertData` 增加格式校验：`indexOf/lastIndexOf` 提取 `{}`/`[]`，乱码/HTML 直接抛错，避免脏数据进入 `JSON.parse` 导致 `SyntaxError` 无限重试
+- `get()` 的 `JSON.parse(res.body)` 加 try-catch 保护；`loadInfo` 拆段防御（`get` 失败 + `JSON.parse` 失败分别友好提示），补 `_cleanError` 剥离调用栈
+- `dailyCheckIn` 不再 throw，改为 `UI.showMessage` + `return`，消除 Unhandled promise rejection
+- `settings.dailyCheckIn.callback` 包装 `.catch(() => {})`
+- `_verifyLogin` 遇到 401 返回 `false` 不抛异常
+
+**体验改进**
+- 错误堆栈精简：业务错误（无效漫画码、获取详情失败等）用 `_cleanError` 覆盖 `stack`，日志不再暴露 `at loadInfo` / `at get` 路径
+- 简体中文化：章节「第 X 話」→「第 X 话」、分类「每週必看」→「每周必看」、排序「總排行」→「总排行」、设置「節點優選」→「节点优选」
+- `loadInfo` 中 `get()` 传递自定义错误消息：无效 ID → "不存在的漫画码"，脏数据 → "获取漫画详情失败，该漫画可能被服务器限制或下架"
+
+---
+
 ### v1.9.2 (2026-10-10)
 
 **Bug 修复**
