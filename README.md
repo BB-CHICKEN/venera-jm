@@ -1,5 +1,11 @@
 # 禁漫天堂 — [Venera-Next](https://github.com/CyrilPeng/Venera-Next) 漫画源插件
 
+[![GitHub release](https://img.shields.io/github/v/release/BB-CHICKEN/venera-jm?style=flat-square)](https://github.com/BB-CHICKEN/venera-jm/releases/latest)
+[![License](https://img.shields.io/github/license/BB-CHICKEN/venera-jm?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/BB-CHICKEN/venera-jm?style=flat-square)](https://github.com/BB-CHICKEN/venera-jm/stargazers)
+[![Downloads](https://img.shields.io/github/downloads/BB-CHICKEN/venera-jm/total?style=flat-square)](https://github.com/BB-CHICKEN/venera-jm/releases)
+[![Last commit](https://img.shields.io/github/last-commit/BB-CHICKEN/venera-jm?style=flat-square)](https://github.com/BB-CHICKEN/venera-jm/commits/main)
+
 基于 [Venera-Next](https://github.com/CyrilPeng/Venera-Next) App 的禁漫天堂 (JMComic) 漫画源，支持浏览、搜索、收藏、签到、节点延迟测试、图片分流测速等功能。
 
 > 本项目基于 [venera-app/venera-configs/jm.js](https://github.com/venera-app/venera-configs/blob/main/jm.js)（原始版本 v1.4.0）重构而来，感谢原作者的贡献。
